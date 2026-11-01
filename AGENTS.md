@@ -19,6 +19,7 @@ OpenChamber guest 扩展，含右侧栏面板和本地服务。宿主不编译 T
 - `panel/main.js` 必须是 classic IIFE。沙箱 iframe 不能加载 ESM。
 - `service/main.js` 用 `--node` 构建，保留 ESM 和 Node 内置模块。
 - 两个产物都要提交。安装检查磁盘文件；缺任一个报 `missing-build`。
+- `src/panel/main.ts` 导入 `package.json`。改动版本或面板名称后必须重建，否则面板显示的版本落后于安装清单。
 - 清单测试要求 `panel/main.js` 已存在。新克隆后先跑 `bun run build`。
 - 构建命令不创建输出目录。新增 `service/`、`background/` 等输出目录时，先提交目录中的产物，或先手动建目录。
 
