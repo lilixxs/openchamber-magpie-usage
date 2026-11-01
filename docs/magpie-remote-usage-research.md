@@ -10,12 +10,12 @@
 ## 0. 结论
 
 1. 代码与配置中不存在字符串 `magpie-remote`。实际对象有三个名字：预设 id `remote-magpie`、本机供应商 id `r-magpie`、显示名 `Remote magpie`。
-2. 用量数据不由远端推送。本机 magpie 在每次请求经过本地网关时写 `usage.jsonl`，把供应商记为 `r-magpie`、主机记为远端域名、模型记为远端返回的 `provider/model`。
+2. 用量数据不由远端推送。本机 magpie 在每次请求经过本地网关时写 `usage.jsonl`，把供应商记为 `r-magpie`、主机记为远端域名、模型记为 `<远端 provider>/<远端 model>`。
 3. 用量接口有两个入口，返回同一份 JSON：
    - 网关：`GET /v1/magpie/usage`（只支持 `period`）与 `GET /v1/magpie/usage/requests`（支持完整筛选与分页）。
    - 界面本地服务：`GET /api/usage`（支持 `period` 与 `tz`）与 `GET /api/usage/requests`。
 4. 额度卡单独取数。本机向远端的 `GET /v1/magpie/quotas/cards` 发请求，用供应商的网关密钥鉴权，然后把卡片 id 改写为 `r-magpie/<远端 provider>`，名称追加 ` · Remote magpie`。
-5. 界面计算集中在三处：总览 KPI 与占比条（`plugins/usage/page.js`）、请求页表格与图表（同文件）、额度卡的百分比与节奏（`app.js`）。所有百分比都按“已用/总量”计算，再用“Used / Left”开关翻转显示。
+5. 界面计算集中在三处：总览 KPI 与占比条（`plugins/usage/page.js`）、请求页表格与图表（同文件）、额度卡的百分比与节奏（`app.js`）。占比条的分母是该周期 token 总数；额度条的分母是窗口上限。
 
 ---
 
@@ -80,11 +80,9 @@
 ### 3.1 用量日志
 
 - 路径：`~/.config/magpie/usage.jsonl`。接口返回的 `path` 字段为 `~\.config\magpie\usage.jsonl`。
-- 写入时机：请求经过本地网关并完成后。
-- 记录范围：
-  - 经本地网关转发的请求；
-  - magpie 读取各 agent 会话文件后补充的用量；
-  - 客户端通过 `POST /v1/magpie/usage/requests` 主动上报的请求。
+- 写入时机：请求经过本地网关并完成后。客户端通过 `POST /v1/magpie/usage/requests` 上报的记录也写入同一文件，并标记 `source: "reported"`。
+- 不写入：agent 会话文件中的调用。明细查询在读取时把会话文件的调用合并进来，来源段记为 `direct`。
+- 汇总口径：只统计经本地网关的记录，并跳过被本地拒绝的记录。
 - `r-magpie` 行的事实（实测，2026-11-01 12:09 +08:00）：
 
 ```json
@@ -142,8 +140,8 @@
 | `POST /v1/magpie/usage/requests` | 客户端上报请求 | 请求体为请求记录 | 不计入网关密钥限额。 |
 | `GET /v1/magpie/quotas` | 额度快照 | `kept=1` 读缓存 | 远端卡片合并进同一响应。 |
 | `GET /v1/magpie/quotas/history` | 额度历史 | `days`、`provider`、`user` | 返回每个窗口的读数序列。 |
-| `GET /v1/magpie/quotas/cards` | 本机缓存的所有卡片 | 无 | 供另一个 magpie 读取。 |
-| `POST /v1/magpie/quotas/refresh` | 让本机重读卡片 | `provider`、`user` | 仅供另一个 magpie 调用。 |
+| `GET /v1/magpie/quotas/cards` | 本机保存的卡片快照 | 无 | 供另一个 magpie 读取。 |
+| `POST /v1/magpie/quotas/refresh` | 让本机重读卡片 | `provider`、`user` | 供另一个 magpie 触发。 |
 
 `period` 取值：
 
@@ -227,7 +225,7 @@ cost, unpriced, credits, credited, timed, ttft_ms, decode_ms, decode_out, decode
 name, icon
 ```
 
-`through` 是经本地网关的请求，`direct` 是只从会话文件读到的请求，`reported` 是客户端上报的请求。顶层总数是三者之和。
+`through` 是经本地网关的请求，`direct` 是只从会话文件读到的请求，`reported` 是客户端上报的请求。界面把这三段相加显示为“全部请求”。明细的 `total` 还包含不属于任何一段的行：被本地拒绝的请求与 magpie 自己的探测请求。
 
 #### 明细行
 
@@ -339,7 +337,7 @@ hit = cache_read / (input + cache_read + cache_write - cache_unknown)
 |---|---|---|
 | Agents | agent id | 客户端名。 |
 | Models | `provider/model`，必要时追加 ` @ host` | 同一供应商 id 去过多个主机时按主机拆分。 |
-| ProviderKeys | `provider#providerKeyId` | 只有存在网关密钥的供应商才出现。 |
+| ProviderKeys | `provider#providerKeyId` | 只为配置了网关密钥的供应商建立。缺少密钥 id 的行归入 `<provider>#`。 |
 | Accounts | `provider@account` | 只有出现订阅账号的供应商才出现。 |
 | CallerKeys | 调用方密钥 id | 空 id 不出现。 |
 | Sessions | `agent|session` | 默认只返回前 100 个（`usageapi.PageSessions`）。 |
@@ -554,12 +552,34 @@ d = used - 100 * (now - startsAt) / (resetsAt - startsAt)
 
 ## 8. 已知边界与未验证项
 
-### 8.1 `providerKeys` 与 `provider` 筛选的计数不同
+### 8.1 汇总与明细的口径不同
 
-- `providerKeys` 只统计带 `providerKeyId` 的行。
-- `provider` 筛选统计该供应商的全部行。
-- 实测 7 天：3124 对 3370。
-- 做对账时不能用两者互证。
+- 汇总统计经本地网关的记录，并跳过被本地拒绝的记录（`usage.Record.IsRejected`）。
+- 明细的 `total` 保留这些被拒绝的记录。
+- 明细的三个来源段对本地拒绝的请求与 magpie 自己的探测请求都不计数（`usage.SourceOf` 返回空）。
+- 实测 7 天（2026-11-01 12:24 +08:00）：
+
+| 查询 | 数值 |
+|---|---|
+| 汇总 `calls` | 6394 |
+| 明细 `total` | 6887 |
+| 明细 `through.calls` | 6394 |
+| 明细 `direct.calls` | 94 |
+| 明细 `reported.calls` | 0 |
+
+- 关键等式：`6887 - 6394 - 94 = 399`。这 399 行是本地拒绝或探测行，只出现在 `total`。
+- 同一时刻按供应商核对：
+
+| 查询 | 数值 |
+|---|---|
+| 汇总 `providerKeys` 的 `r-magpie#...` | 3216（12:17 读数） |
+| 明细 `provider=r-magpie` 的 `total` | 3396（12:17 读数） |
+| 明细 `provider=r-magpie&via=through` 的 `total` | 3220（12:17 读数） |
+
+- 结论：
+  - 对账时，汇总只能与 `via=through` 对齐；
+  - 看总量时应使用界面显示的“全部请求”，它等于三段相加；
+  - 不要把明细 `total` 当作“网关调用数”。
 
 ### 8.2 网关汇总没有时区与筛选
 
