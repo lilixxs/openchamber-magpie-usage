@@ -1,0 +1,119 @@
+/* Colours come from the host tokens that applyHostReady writes. */
+html,
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--oc-fg);
+  font: 12px/1.5 var(--oc-font);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  color: var(--oc-muted);
+  font-size: 11px;
+}
+
+.version {
+  flex: none;
+  color: var(--oc-muted);
+  font: 10px/1.6 var(--oc-mono);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--oc-radius);
+  background: color-mix(in srgb, var(--oc-fg) 4%, transparent);
+}
+
+.label {
+  color: var(--oc-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 11px;
+}
+
+.row-key {
+  color: var(--oc-muted);
+}
+
+.row-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  margin: 0;
+  color: var(--oc-muted);
+  font-size: 11px;
+}
+
+.actions {
+  display: flex;
+}
+
+.output {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: calc(var(--oc-radius) - 2px);
+  background: color-mix(in srgb, var(--oc-fg) 6%, transparent);
+  color: var(--oc-fg);
+  font: 11px/1.45 var(--oc-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.footer {
+  margin: 2px 0 0;
+  color: var(--oc-muted);
+  font-size: 10px;
+}

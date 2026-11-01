@@ -1,0 +1,39 @@
+{
+  "name": "openchamber-magpie-usage",
+  "version": "0.1.0",
+  "description": "OpenChamber extension for Magpie gateway usage and quota",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.5.0"
+    },
+    "contributes": {
+      "panel": {
+        "id": "magpie-usage",
+        "name": "Magpie Usage",
+        "icon": "bar-chart",
+        "entry": "panel/index.html"
+      },
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host"
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun run build:panel && bun run build:service",
+    "build:panel": "openchamber-guest-bundle src/panel/main.ts panel/main.js",
+    "build:service": "openchamber-guest-bundle --node src/service/main.ts service/main.js",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun test && bun run typecheck && bun run build"
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "2.5.1",
+    "@types/bun": "^1.4.2",
+    "typescript": "^5.9.2"
+  }
+}
