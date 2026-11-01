@@ -87,6 +87,14 @@ describe('locale registry', () => {
     expect(readRegistry('[]')).toBeNull();
     expect(readRegistry('[{"code":"en","name":"English","dir":"up"}]')).toBeNull();
     expect(readRegistry('[{"code":"","name":"English","dir":"ltr"}]')).toBeNull();
+    expect(readRegistry('[{"code":"en","name":"English","dir":"ltr","test":"yes"}]')).toBeNull();
+  });
+
+  test('marks the Arabic fixture as right-to-left', () => {
+    const entry = registry().find((candidate) => candidate.code === 'ar');
+    expect(entry).toBeDefined();
+    expect(entry?.dir).toBe('rtl');
+    expect(entry?.test).toBe(true);
   });
 
   test('loadRegistry reads index.json through the injected fetcher', async () => {

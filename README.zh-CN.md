@@ -370,6 +370,14 @@ CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit
 - 其他 magpie 版本的窗口命名与 `pool` 字段：折叠规则只认 `(High|Low|Medium)`，且只作用于有 pool 的窗口。
 - 上游 `kept=1` 在其他 magpie 版本下的语义；本机返回空列表。
 
+### 从右到左的布局
+
+`panel/locales/ar.json` 是夹具，不是提供给用户的语言。它存在只为让 RTL 路径持续被覆盖：词条齐全（键、阿拉伯语的六种 CLDR 复数类别、与英文一致的占位符），并在注册表里标了 `"test": true`。
+
+在配置文件里写 `"language": "ar"` 并重开面板。`src/panel/app.ts` 把注册表的 `dir` 写到 `<html dir>`，布局随之镜像；`panel/styles.css` 在 `[dir='rtl']` 下去掉拉丁文案使用的字距，因为字距会拆开阿拉伯语连写。
+
+未覆盖：阿语文案是为测试排版而写，未经母语校对；夹具覆盖的是面板，不包括宿主自己的窗口外壳。
+
 ## 许可
 
 MIT。见 [LICENSE](LICENSE)。

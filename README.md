@@ -371,6 +371,14 @@ Not verified:
 - Other Magpie versions' window names and `pool` fields: the folding rule only recognises `(High|Low|Medium)` and only applies inside a pool.
 - The semantics of upstream `kept=1` on other Magpie versions; on this machine it returns an empty list.
 
+### Right-to-left layout
+
+`panel/locales/ar.json` is a fixture, not a language anyone is offered. It exists so the RTL path stays covered: the bundle is complete (key parity, the six Arabic CLDR plural categories, and the same placeholders as English), and the registry marks it `"test": true`.
+
+Set `"language": "ar"` in the config file and reopen the panel. `src/panel/app.ts` writes the registry entry's `dir` to `<html dir>`, so the layout mirrors; `panel/styles.css` drops the letter-spacing the Latin labels use under `[dir='rtl']`, because tracking breaks Arabic joins.
+
+Not covered: the Arabic copy was written for layout testing and is not native-proofread, and the fixture exercises the panel, not the host's own window chrome.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -238,7 +238,7 @@ body {
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   border-radius: 1px;
   vertical-align: -1px;
   background: color-mix(in srgb, var(--oc-primary) 42%, transparent);
@@ -353,7 +353,7 @@ body {
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -378,7 +378,7 @@ body {
 
 .quo-fig {
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--oc-muted);
   font: 9.5px/1.4 var(--oc-mono);
   font-variant-numeric: tabular-nums;
@@ -597,4 +597,17 @@ body {
   color: var(--oc-muted);
   font-size: 9.5px;
   line-height: 1.45;
+}
+
+/*
+ * Arabic joins break under any letter-spacing, and the classes below add
+ * tracking for Latin labels. Direction itself comes from `<html dir>`, which
+ * src/panel/app.ts writes from the registry entry.
+ */
+[dir='rtl'] .title,
+[dir='rtl'] .label,
+[dir='rtl'] .kpi-label,
+[dir='rtl'] .kpi-value,
+[dir='rtl'] .q-pool-name {
+  letter-spacing: normal;
 }

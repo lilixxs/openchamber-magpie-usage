@@ -12,6 +12,8 @@ export type LocaleEntry = {
   /** Endonym shown to translators; the panel itself never renders a picker. */
   name: string;
   dir: LocaleDirection;
+  /** Fixture locale kept for layout coverage, not a language users are offered. */
+  test?: boolean;
 };
 
 export type ResolvedLocale = {
@@ -43,11 +45,12 @@ export const readRegistry = (body: string): LocaleEntry[] | null => {
   for (const item of value) {
     if (typeof item !== 'object' || item === null) return null;
     const record = item as Record<string, unknown>;
-    const { code, name, dir } = record;
+    const { code, name, dir, test } = record;
     if (typeof code !== 'string' || code === '') return null;
     if (typeof name !== 'string' || name === '') return null;
     if (!isDirection(dir)) return null;
-    entries.push({ code, name, dir });
+    if (test !== undefined && typeof test !== 'boolean') return null;
+    entries.push(test === undefined ? { code, name, dir } : { code, name, dir, test });
   }
   return entries;
 };

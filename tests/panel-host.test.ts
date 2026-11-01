@@ -881,6 +881,16 @@ describe('language selection', () => {
     expect(dom.document.documentElement.lang).toBe('en');
   });
 
+  test('the Arabic fixture switches the document to right-to-left', async () => {
+    const host = makeHost(withConfig(configReport({ language: 'ar' })));
+    start(host, { locale: 'en' });
+    await tick();
+
+    expect(dom.document.documentElement.lang).toBe('ar');
+    expect(dom.document.documentElement.dir).toBe('rtl');
+    expect(periodButton('today').textContent).toBe('اليوم');
+  });
+
   test('auto falls back to English when the host locale is not bundled', async () => {
     const host = makeHost();
     start(host, { locale: 'de' });

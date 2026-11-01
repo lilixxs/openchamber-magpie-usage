@@ -3,6 +3,7 @@ import { applyHostReady, mountBadge, mountButton } from '@openchamber/sdk/ui';
 import type { HostClient, ServiceStatus } from '@openchamber/sdk';
 
 import manifest from '../../package.json';
+import ar from '../../panel/locales/ar.json';
 import en from '../../panel/locales/en.json';
 import localeIndex from '../../panel/locales/index.json';
 import zhCN from '../../panel/locales/zh-CN.json';
@@ -299,7 +300,11 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
    * no network of its own, and a package-relative request does not survive the
    * web relay's opaque origin. The registry is read from the imported list.
    */
-  const MESSAGES: Record<string, Messages> = { en, 'zh-CN': zhCN as Messages };
+  const MESSAGES: Record<string, Messages> = {
+    en,
+    'zh-CN': zhCN as Messages,
+    ar: ar as Messages,
+  };
 
   const messagesFor = (code: string): Messages | null => MESSAGES[code] ?? null;
 
