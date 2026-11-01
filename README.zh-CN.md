@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以及网关返回的全部额度卡与余额卡。
+OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用量汇总、趋势，以及网关返回的全部额度卡与余额卡。
 
 面板从不直接联网。它只调用 `host.serviceRequest()`；扩展自带的本地服务向配置的 Magpie 端点发起只读 GET，把结果规范化后交回面板。
 

@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-An OpenChamber right-sidebar extension for Magpie: usage totals, trends, and every quota and balance card the gateway reports.
+An OpenChamber right-sidebar extension for [Magpie](https://usemagpie.ai): usage totals, trends, and every quota and balance card the gateway reports.
 
 The panel never talks to the network. It calls `host.serviceRequest()`; the extension's local service performs read-only GETs against the configured Magpie endpoint and normalises the payload for the panel.
 
