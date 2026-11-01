@@ -22,6 +22,8 @@ bun install
 
 ```bash
 bun run build          # panel/main.js 与 service/main.js
+bun run build:panel    # 只构建面板
+bun run build:service  # 只构建服务
 bun run typecheck      # tsc --noEmit
 ```
 
@@ -57,7 +59,7 @@ git diff --exit-code -- panel/main.js service/main.js
 - `bun test tests/service.test.ts` 检查服务契约。
 - `bun test tests/panel-host.test.ts` 检查面板到宿主的桥接。
 - `GET /health` 返回 `{ ok, name, apiVersion }`。服务只绑 `127.0.0.1`，要求 `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN`。如果必须探测运行中的服务，使用环境里的宿主 token；不要把 token 粘进 issue、日志或提交。
-- `GET /config` 显示 `language` 与 `languageInvalid`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。
+- `GET /config` 显示 `language`、`languageInvalid`、`cardOrder`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。
 - 上游网关是环回地址时可直接探测：`GET http://127.0.0.1:3425/v1/magpie/usage?period=today` 与 `GET http://127.0.0.1:3425/v1/magpie/quotas`。
 
 服务每个请求都重读 `config.json`，改好文件即可生效，不用重启。语言改动在下一轮面板刷新（默认 60 秒）生效。服务不记录 token；不要破坏这一点。

@@ -31,7 +31,7 @@ OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以
 
 <img src="docs/images/install-openchamber-extensions.png" alt="OpenChamber 的 Settings → Extensions 页面：添加扩展卡片和已安装的 Magpie Usage 扩展" width="860">
 
-<p><sub>OpenChamber 的 **Settings → Extensions**。已安装扩展显示为 **Magpie Usage**。截图裁到设置对话框，不含项目或会话内容。</sub></p>
+<p><sub>OpenChamber 的 **Settings → Extensions**。已安装扩展显示为 **Magpie Usage**。截图裁到设置对话框，不含项目或会话内容。magpie 桌面端没有扩展安装界面，因此本组只截 OpenChamber。</sub></p>
 
 本地开发时，在同一个对话框里填入本仓库的绝对路径，而不是 Git URL。OpenChamber 不编译 TypeScript：`panel/main.js` 与 `service/main.js` 是构建产物，必须存在于磁盘上。只有构建时才需要 Bun 1.4 或更高版本。
 
@@ -174,7 +174,7 @@ OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以
 
 ### 排序
 
-拖动厂商标识，或聚焦标识后按 <kbd>↑</kbd>、<kbd>↓</kbd>、<kbd>Home</kbd>、<kbd>End</kbd>。顺序写入 `config.json` 的 `cardOrder`。写盘失败时，面板保留新顺序，在「配额」标题旁显示 `order not saved`，下次放下时重试。键盘移动通过 `aria-live` 播报。
+拖动厂商标识，或聚焦标识后按 <kbd>↑</kbd>、<kbd>↓</kbd>、<kbd>Home</kbd>、<kbd>End</kbd>。顺序写入 `config.json` 的 `cardOrder`。写盘失败时，面板保留新顺序，在「配额」标题旁显示 `order not saved`，下次放下时重试。键盘移动通过 `aria-live` 播报。magpie 桌面端没有等价的卡片排序控件；这一组只截 OpenChamber。
 
 <table>
 <tr>

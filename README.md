@@ -31,7 +31,7 @@ The panel never talks to the network. It calls `host.serviceRequest()`; the exte
 
 <img src="docs/images/install-openchamber-extensions.png" alt="OpenChamber Settings, Extensions: Add extension card and the installed Magpie Usage extension" width="860">
 
-<p><sub>OpenChamber **Settings → Extensions**. The installed extension is listed as **Magpie Usage**. The screenshot is cropped to the settings dialog; no project or session content is included.</sub></p>
+<p><sub>OpenChamber **Settings → Extensions**. The installed extension is listed as **Magpie Usage**. The screenshot is cropped to the settings dialog; no project or session content is included. Magpie desktop has no extension-installer screen, so this group is OpenChamber-only.</sub></p>
 
 For local development, paste the absolute path to your checkout in the same dialog instead of the Git URL. OpenChamber does not compile TypeScript: `panel/main.js` and `service/main.js` are built artifacts and must exist on disk. Bun 1.4 or newer is only needed to build them.
 
@@ -174,7 +174,7 @@ Balance cards split the upstream ` · `-joined string into label/value rows: the
 
 ### Ordering
 
-Drag a card by its provider mark, or focus the mark and press <kbd>↑</kbd>, <kbd>↓</kbd>, <kbd>Home</kbd>, or <kbd>End</kbd>. The order is written to `cardOrder` in `config.json`. If the write fails, the panel keeps the new order, shows `order not saved` next to the Quotas heading, and retries on the next drop. Keyboard moves are announced through `aria-live`.
+Drag a card by its provider mark, or focus the mark and press <kbd>↑</kbd>, <kbd>↓</kbd>, <kbd>Home</kbd>, or <kbd>End</kbd>. The order is written to `cardOrder` in `config.json`. If the write fails, the panel keeps the new order, shows `order not saved` next to the Quotas heading, and retries on the next drop. Keyboard moves are announced through `aria-live`. Magpie desktop has no equivalent card-ordering control; this group is OpenChamber-only.
 
 <table>
 <tr>
