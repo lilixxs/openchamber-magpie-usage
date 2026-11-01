@@ -96,7 +96,7 @@ Screenshots live in `docs/images/` and are referenced by relative path from both
 - Every image needs descriptive alt text naming the app, screen, period, and state.
 - Check every image at 100% after redaction; a single visible character from a secret is a failure.
 
-The README uses 24 images across 8 groups: install, usage (today/7d/30d), trend, quota cards (pooling and collapsed), balance cards (DeepSeek and openai-mm), error cards, ordering, and configuration/language.
+The README uses 24 images across 8 groups: install, usage (today/7d/30d), trend, quota cards (pooling and collapsed), balance cards (DeepSeek and a custom OpenAI-compatible endpoint), error cards, ordering, and configuration/language.
 
 ## Translations
 

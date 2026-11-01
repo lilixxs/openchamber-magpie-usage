@@ -142,9 +142,9 @@ Within a pool, layered model names ending in `(High)`, `(Low)`, or `(Medium)` ar
 </tr>
 </table>
 
-<img src="docs/images/quota-collapsed-openchamber.png" alt="OpenChamber quota list with every card collapsed, showing handles, names, plan labels, remaining percentages, and balances" width="860">
+<img src="docs/images/quota-collapsed-openchamber.png" alt="OpenChamber quota list with every card collapsed, showing handles, names (one redacted), plan labels, remaining percentages, and balances" width="860">
 
-<p><sub>All cards collapsed. The provider marks stay visible as drag handles; the chevron expands a card. Error cards are not in this crop because they never collapse.</sub></p>
+<p><sub>All cards collapsed. The provider marks stay visible as drag handles; the chevron expands a card. One provider name is redacted. Error cards are not in this crop because they never collapse.</sub></p>
 
 ### Balance cards
 
@@ -163,12 +163,12 @@ Balance cards split the upstream ` · `-joined string into label/value rows: the
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/balance-openai-mm-openchamber.png" alt="OpenChamber openai-mm balance card with balance, used amount, remaining percentage, daily spend, mode, and request counters" width="420"></td>
-<td width="50%"><img src="docs/images/balance-openai-mm-magpie.png" alt="Magpie desktop openai-mm balance card with balance, used amount, remaining percentage, daily spend, mode, and request counters" width="420"></td>
+<td width="50%"><img src="docs/images/balance-openai-compatible-openchamber.png" alt="OpenChamber balance card for a custom OpenAI-compatible endpoint, provider name redacted, showing balance, used amount, remaining percentage, daily spend, mode, and request counters" width="420"></td>
+<td width="50%"><img src="docs/images/balance-openai-compatible-magpie.png" alt="Magpie desktop balance card for the same custom OpenAI-compatible endpoint, provider name redacted, showing balance, used amount, remaining percentage, daily spend, mode, and request counters" width="420"></td>
 </tr>
 <tr>
-<td><sub><b>OpenChamber</b>: the upstream string becomes separate label/value rows. This read is $26.36.</sub></td>
-<td><sub><b>magpie desktop</b>: the same fields at $25.11. The reads are not simultaneous; this pair compares the layout, not the cents.</sub></td>
+<td><sub><b>OpenChamber</b>: a custom OpenAI-compatible endpoint; the provider name is redacted. The upstream string becomes separate label/value rows. This read is $26.36.</sub></td>
+<td><sub><b>magpie desktop</b>: the same endpoint at $25.11, also with the provider name redacted. The reads are not simultaneous; this pair compares the layout, not the cents.</sub></td>
 </tr>
 </table>
 
@@ -358,7 +358,7 @@ Verified on 2026-11-01:
 - `git diff --exit-code -- panel/main.js service/main.js` exited 0 after the check.
 - Screenshots: 24 images across all 8 groups, in `docs/images/`. OpenChamber and magpie desktop are side by side for usage (today/7d/30d), the 7-day trend, pooled quota cards, balance cards, and configuration/language. Account e-mails, the API-key fragment, and the absolute config path were removed with solid fills or excluded from the crop.
 - Real gateway: 12 cards rendered with no script errors. Antigravity folded into three pool rows (Claude & GPT, Gemini, Gemini 4 Argon) with all nine `(High)/(Low)/(Medium)` layers hidden; windows sorted 5 hours → 7 days.
-- `openai-mm`'s balance string split into 14 label/value rows; the single-segment `¥21.08` stayed whole; `unlimited`, the four balance cards, and the two error cards rendered correctly; no money row showed `NaN`.
+- The custom OpenAI-compatible endpoint's balance string split into 14 label/value rows; the single-segment `¥21.08` stayed whole; `unlimited`, the four balance cards, and the two error cards rendered correctly; no money row showed `NaN`.
 - Container query: at about 340px card width, `grid-template-columns` was `154px 154px`; at 240px it became a single `220px` column.
 - Dragging the first card to third position wrote `cardOrder` while preserving `baseUrl`; reopening the panel kept the order. Keyboard `End` moved a card and `aria-live` announced "moved to position 12 of 12".
 - Writing invalid JSON into `config.json` and then dragging a card copied the original byte-for-byte to `config.json.bak` and rewrote a valid file containing only `cardOrder` (two-space indent, trailing newline). Configuration reported `config.json was invalid; saved as … and reset`.

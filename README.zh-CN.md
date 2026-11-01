@@ -142,9 +142,9 @@ OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以
 </tr>
 </table>
 
-<img src="docs/images/quota-collapsed-openchamber.png" alt="OpenChamber 额度列表全部折叠：厂商标识、卡名、套餐标签、剩余百分比与余额" width="860">
+<img src="docs/images/quota-collapsed-openchamber.png" alt="OpenChamber 额度列表全部折叠：厂商标识、卡名（其中一处已遮盖）、套餐标签、剩余百分比与余额" width="860">
 
-<p><sub>全部卡片折叠。厂商标识仍作为拖拽手柄显示；点箭头可重新展开。错误卡不在这张裁图里，因为它们从不折叠。</sub></p>
+<p><sub>全部卡片折叠。厂商标识仍作为拖拽手柄显示；点箭头可重新展开。其中一处供应商名称已遮盖。错误卡不在这张裁图里，因为它们从不折叠。</sub></p>
 
 ### 余额卡
 
@@ -163,12 +163,12 @@ OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/balance-openai-mm-openchamber.png" alt="OpenChamber openai-mm 余额卡：余额、已用额度、剩余百分比、今日花费、配额模式与请求计数" width="420"></td>
-<td width="50%"><img src="docs/images/balance-openai-mm-magpie.png" alt="magpie 桌面端 openai-mm 余额卡：余额、已用额度、剩余百分比、今日花费、配额模式与请求计数" width="420"></td>
+<td width="50%"><img src="docs/images/balance-openai-compatible-openchamber.png" alt="OpenChamber 自定义 OpenAI 兼容端点余额卡，供应商名称已遮盖：余额、已用额度、剩余百分比、今日花费、配额模式与请求计数" width="420"></td>
+<td width="50%"><img src="docs/images/balance-openai-compatible-magpie.png" alt="magpie 桌面端同一自定义 OpenAI 兼容端点余额卡，供应商名称已遮盖：余额、已用额度、剩余百分比、今日花费、配额模式与请求计数" width="420"></td>
 </tr>
 <tr>
-<td><sub><b>OpenChamber</b>：上游字符串拆成独立的标签/数值行。本次读取为 $26.36。</sub></td>
-<td><sub><b>magpie 桌面端</b>：同样的字段，数值为 $25.11。两次读取不是同一时刻；这一对比较的是布局，不是分币级数值。</sub></td>
+<td><sub><b>OpenChamber</b>：自定义 OpenAI 兼容端点；供应商名称已遮盖。上游字符串拆成独立的标签/数值行。本次读取为 $26.36。</sub></td>
+<td><sub><b>magpie 桌面端</b>：同一端点，数值为 $25.11，供应商名称同样已遮盖。两次读取不是同一时刻；这一对比较的是布局，不是分币级数值。</sub></td>
 </tr>
 </table>
 
@@ -357,7 +357,7 @@ CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit
 - 检查后运行 `git diff --exit-code -- panel/main.js service/main.js`，退出码 0。
 - 截图：`docs/images/` 共 24 张，覆盖全部 8 个功能组。用量（今天/7 天/30 天）、7 天趋势、池化额度卡、余额卡、配置/语言均与 magpie 桌面端并排。账户邮箱、API key 片段、绝对配置路径已用实心色块覆盖或裁出画面。
 - 真实网关：12 张卡全部渲染，无脚本错误。Antigravity 折成 3 个 pool 行（Claude & GPT、Gemini、Gemini 4 Argon），9 个 `(High)/(Low)/(Medium)` 分层全部隐藏；窗口按 5 小时 → 7 天排序。
-- `openai-mm` 的余额串拆成 14 行标签/数值；单段余额 `¥21.08` 整体显示；`unlimited`、4 张余额卡与 2 张错误卡行为正确；所有金额行无 `NaN`。
+- 自定义 OpenAI 兼容端点的余额串拆成 14 行标签/数值；单段余额 `¥21.08` 整体显示；`unlimited`、4 张余额卡与 2 张错误卡行为正确；所有金额行无 `NaN`。
 - 容器查询：卡宽约 340px 时 `grid-template-columns` 为 `154px 154px`；240px 时降为单列 `220px`。
 - 拖拽第一张卡到第三位：`config.json` 写入 `cardOrder`，`baseUrl` 原样保留，重新打开面板顺序不变；键盘 `End` 移动生效，`aria-live` 播报「moved to position 12 of 12」。
 - 手工把 `config.json` 写成非法 JSON 后再拖一张卡：原文逐字复制到 `config.json.bak`，文件被重写为只含 `cardOrder` 的合法 JSON（2 空格缩进、结尾换行），配置卡显示 `config.json was invalid; saved as … and reset`。
