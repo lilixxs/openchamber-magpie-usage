@@ -56,7 +56,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.json
 - 服务写文件时统一 2 空格缩进 + 结尾换行，保留未知顶层键，沿用原文件权限（读不到时 0600），先写临时文件再 `rename` 覆盖。
 - 若拖拽时文件已不是合法的 JSON 对象，服务先把原文复制为 `config.json.bak`（已存在则 `config.json.bak-<UTC 时间戳>`），再写入只含 `cardOrder` 的合法文件，并在面板 Configuration 区保留一条提示。文件缺失时则新建，面板的「No config file yet」随之消失。
 - `language` 为 `auto` 时跟随 OpenChamber 语言：只有 `zh-CN` 精确命中华语包，`zh-TW`、`ja`、`de` 等一律显示英文。显式写 `en` / `zh-CN` 可覆盖宿主语言；写了 `index.json` 里不存在的值会回退 `auto` 并显示提示。面板每轮刷新（默认 60 秒）重读 `/config`，改完语言最多等一个周期生效。
-- 词条与贡献流程见 [docs/translations.md](docs/translations.md)。本仓库把语言包在构建期内联进 `panel/main.js`（面板禁止 `fetch`），所以新增语言除了加 JSON，还要在 `src/panel/main.ts` 增加 import 与 `MESSAGES` 映射，然后重建产物。
+- 词条与贡献流程见 [docs/translations.md](docs/translations.md)。本仓库把语言包在构建期内联进 `panel/main.js`（面板禁止 `fetch`），所以新增语言除了加 JSON，还要在 `src/panel/app.ts` 增加 import 与 `MESSAGES` 映射，然后重建产物。
 
 密钥只进入服务进程。面板只拿到「是否已配置」这个布尔值，没有输入框，不回显，不写入任何存储、日志、URL 或构建产物。
 
@@ -142,7 +142,7 @@ OpenChamber 不编译 TypeScript。`panel/main.js` 与 `service/main.js` 是构�
 
 ### 测试覆盖
 
-`bun test` 全部离线（hermetic）：假网关、临时配置目录、真实 HTTP 往返。
+`bun test` 全部离线（hermetic）：假网关、临时配置目录、真实 HTTP 往返；面板测试用 fake host 与 happy-dom，不启动 HTTP、不连接真实宿主。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -154,14 +154,16 @@ OpenChamber 不编译 TypeScript。`panel/main.js` 与 `service/main.js` 是构�
 | `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符 |
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量 |
-| `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、无存储、只用 `--oc-*`、控件不在 `onReady` 内挂载、图标以 data URI 内联、两列网格与容器查询存在 |
+| `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、无存储、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在 |
+| `tests/panel-host.test.ts` | 面板经 fake host 挂载：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 全 code、服务错误词汇表、非 JSON 与回应形状错误且不回显上游原文；周期切换只重拉 usage、手动刷新带 `refresh=1`、throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、serviceStatus 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid` |
 
 ## 验证记录（2026-11-01，额度卡改版）
 
 已验证：
 
 - `bun run check` 全绿（typecheck + 全部测试 + 构建）。
-- 连续两次 `bun run build` 产物 SHA-256 不变：`panel/main.js` `B44EEFFB…951F892`，`service/main.js` `A0535553…8E50C6E95`。
+- 连续两次 `bun run build` 产物 SHA-256 不变：`panel/main.js` `EC65B475…B4DA81`，`service/main.js` `A0535553…8E50C6E95`；`bun install --frozen-lockfile` 通过。
+- 面板桥接层测试 `tests/panel-host.test.ts`（happy-dom + fake host）全部通过：首屏三个请求、错误映射、周期/刷新、键盘排序、展开状态、重复 `onReady` 与语言选择；不启动 HTTP、不连真实宿主、不读写用户配置目录。
 - 在真实 Chromium 中用模拟宿主（`service-request` 经本地代理转给**构建产物**服务）读取本机 `127.0.0.1:3425`：12 张卡全部渲染，无脚本错误。
   - Antigravity 折成 3 个 pool 行（Claude & GPT 2 格、Gemini 2 格、Gemini 4 Argon 1 格），9 个 `(High)/(Low)/(Medium)` 分层全部隐藏，窗口按 5 小时 → 7 天排序。
   - `openai-mm` 的余额串拆成 14 行标签/数值；单段余额 `¥21.08` 整体显示；`unlimited`、2 张错误卡、4 张余额卡行为正确；所有金额行无 `NaN`。
@@ -169,7 +171,7 @@ OpenChamber 不编译 TypeScript。`panel/main.js` 与 `service/main.js` 是构�
 - 拖拽第一张卡到第三位：`config.json` 写入 `cardOrder`，`baseUrl` 原样保留，重新打开面板顺序不变；键盘 `End` 移动生效，`aria-live` 播报「moved to position 12 of 12」。
 - 手工把 `config.json` 写成非法 JSON 后再拖一张卡：原文逐字复制到 `config.json.bak`，文件被重写为只含 `cardOrder` 的合法 JSON（2 空格缩进、结尾换行），Configuration 区显示 `config.json was invalid; saved as … and reset`。
 - 让写盘失败（配置路径被目录占用）：面板保留新顺序，Quotas 标题旁出现 `order not saved`，提示里带服务给出的原因。
-- 构建体积：`panel/main.js` 110,159 字节。图标内联约 +28 KB，同一处还有本地化文案约 +12 KB；额度卡本身（新标记 + 池化网格）替换掉旧卡片渲染后基本持平。
+- 构建体积：`panel/main.js` 110,454 字节。图标内联约 +28 KB，同一处还有本地化文案约 +12 KB；额度卡本身（新标记 + 池化网格）替换掉旧卡片渲染后基本持平。
 
 未验证：
 

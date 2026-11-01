@@ -71,7 +71,7 @@ describe('locale registry', () => {
     expect(new Set(codes).size).toBe(codes.length);
     expect(codes).toContain('en');
 
-    const panelSource = readText(join(root, 'src', 'panel', 'main.ts'));
+    const panelSource = readText(join(root, 'src', 'panel', 'app.ts'));
     for (const entry of entries) {
       expect(entry.name.trim()).not.toBe('');
       expect(['ltr', 'rtl']).toContain(entry.dir);

@@ -4,7 +4,7 @@
 
 OpenChamber guest 扩展，含右侧栏面板和本地服务。宿主不编译 TypeScript；安装时只读取已构建的 JS。
 
-入口链：`src/panel/main.ts` → `panel/main.js`；`src/service/main.ts` → `service/main.js`；`src/shared/health.ts` 是面板与服务共用的 `/health` 契约。
+入口链：`src/panel/main.ts`（`connectHost()` + 挂载）→ `src/panel/app.ts`（`mountPanel`）→ `panel/main.js`；`src/service/main.ts` → `service/main.js`；`src/shared/health.ts` 是面板与服务共用的 `/health` 契约。
 
 ## 命令
 
@@ -19,8 +19,8 @@ OpenChamber guest 扩展，含右侧栏面板和本地服务。宿主不编译 T
 - `panel/main.js` 必须是 classic IIFE。沙箱 iframe 不能加载 ESM。
 - `service/main.js` 用 `--node` 构建，保留 ESM 和 Node 内置模块。
 - 两个产物都要提交。安装检查磁盘文件；缺任一个报 `missing-build`。
-- `src/panel/main.ts` 导入 `package.json`。改动版本或面板名称后必须重建，否则面板显示的版本落后于安装清单。
-- `panel/locales/*.json` 由 `src/panel/main.ts` 静态导入并内联进 `panel/main.js`（面板禁止 `fetch`）。改词条、加语言或改 `index.json` 后必须重建面板产物。
+- `src/panel/app.ts` 导入 `package.json`。改动版本或面板名称后必须重建，否则面板显示的版本落后于安装清单。
+- `panel/locales/*.json` 由 `src/panel/app.ts` 静态导入并内联进 `panel/main.js`（面板禁止 `fetch`）。改词条、加语言或改 `index.json` 后必须重建面板产物。
 - 清单测试要求 `panel/main.js` 已存在。新克隆后先跑 `bun run build`。
 - 构建命令不创建输出目录。新增 `service/`、`background/` 等输出目录时，先提交目录中的产物，或先手动建目录。
 
@@ -43,12 +43,12 @@ OpenChamber guest 扩展，含右侧栏面板和本地服务。宿主不编译 T
 
 - 每次 `onReady` 调用 `applyHostReady`。控件只挂载一次；重复快照只更新值。
 - 颜色用宿主变量 `--oc-*`，不要写死浅色或深色值。
-- 不得硬编码用户可见文案。词条在 `panel/locales/*.json`；新增键必须同时更新 `en.json` 与 `zh-CN.json`，复数键按 CLDR 类别配齐。新增语言还要在 `src/panel/main.ts` 增加 import 与 `MESSAGES` 映射（构建期内联）。规则见 `docs/translations.md`。
-- 额度卡标记在 `src/panel/main.ts`：`.quo-card` 是容器（`container-type: inline-size`），每个 pool 一个 `.q-pool` 两列网格，窄于 260px 自动单列。展开状态按卡片顺序键记在内存里的 `Set` 中，不写任何存储。拖拽用 window 上的 pointer 监听，不用 `setPointerCapture`：重排会把持有捕获的卡片从 DOM 里移出，Chromium 会当场丢掉捕获。
+- 不得硬编码用户可见文案。词条在 `panel/locales/*.json`；新增键必须同时更新 `en.json` 与 `zh-CN.json`，复数键按 CLDR 类别配齐。新增语言还要在 `src/panel/app.ts` 增加 import 与 `MESSAGES` 映射（构建期内联）。规则见 `docs/translations.md`。
+- 额度卡标记在 `src/panel/app.ts`：`.quo-card` 是容器（`container-type: inline-size`），每个 pool 一个 `.q-pool` 两列网格，窄于 260px 自动单列。展开状态按卡片顺序键记在内存里的 `Set` 中，不写任何存储。拖拽用 window 上的 pointer 监听，不用 `setPointerCapture`：重排会把持有捕获的卡片从 DOM 里移出，Chromium 会当场丢掉捕获。
 
 ## 状态
 
-用量面板已实现并交付；额度卡按 magpie 自己的额度页改版（厂商标识、池化两列、剩余优先、拖拽排序）。界面文案已接入 i18n（`en` / `zh-CN`），语言由 `config.json` 的 `language` 控制。
+用量面板已实现并交付；额度卡按 magpie 自己的额度页改版（厂商标识、池化两列、剩余优先、拖拽排序）。界面文案已接入 i18n（`en` / `zh-CN`），语言由 `config.json` 的 `language` 控制。面板实现位于 `src/panel/app.ts` 的 `mountPanel({ host, root })`；入口只负责 `connectHost()` 与挂载。`tests/panel-host.test.ts` 用 happy-dom 与 fake host 覆盖面板到宿主桥接层。
 
 面板与服务共用 `src/shared/magpie.ts`（配置解析、上游载荷规范化、卡片顺序键、错误词汇表）、`src/shared/format.ts`（格式化、命中率、窗口百分比）与 `src/shared/quotas-view.ts`（pool 分组、分层折叠、窗口排序、剩余金额行、余额拆分、图标映射）。
 
@@ -65,4 +65,4 @@ OpenChamber guest 扩展，含右侧栏面板和本地服务。宿主不编译 T
 - 厂商标识内联在 `src/panel/logos.ts`（来自 yetone/magpie，MIT）：彩色标记用 data URI `<img>`，单色标记用 `currentColor` 遮罩；未知供应商用 `generic`。
 - 面板只经 `host.serviceRequest` 取数与写顺序；不读写任何浏览器存储；不提供密钥输入。
 
-验证：`bun run check` 全绿；两次构建字节一致；模拟宿主下的真实网关实测覆盖 12 张卡、拖拽/键盘排序、配置备份与重置、260px 容器查询；写盘失败显示 `order not saved`。安装后的右侧栏像素外观与真实宿主交互仍未验证，见 README「验证记录」。
+验证：`bun run check` 全绿；两次构建字节一致；`bun install --frozen-lockfile` 通过；模拟宿主下的真实网关实测覆盖 12 张卡、拖拽/键盘排序、配置备份与重置、260px 容器查询；写盘失败显示 `order not saved`。`tests/panel-host.test.ts` 用 happy-dom + fake host 覆盖面板桥接层的首屏请求、错误映射、周期/刷新、排序/展开、重复 `onReady` 与语言选择，不启动 HTTP、不连真实宿主、不读写用户配置目录。安装后的右侧栏像素外观与真实宿主交互仍未验证，见 README「验证记录」。

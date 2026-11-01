@@ -6,7 +6,8 @@ import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
 const bundle = readFileSync(join(root, 'panel/main.js'), 'utf8');
-const source = readFileSync(join(root, 'src/panel/main.ts'), 'utf8');
+const entry = readFileSync(join(root, 'src/panel/main.ts'), 'utf8');
+const source = readFileSync(join(root, 'src/panel/app.ts'), 'utf8');
 const css = readFileSync(join(root, 'panel/styles.css'), 'utf8');
 
 describe('panel bundle', () => {
@@ -42,7 +43,10 @@ describe('panel bundle', () => {
 
   test('talks to the service through the host bridge only', () => {
     expect(source.includes('host.serviceRequest(')).toBe(true);
-    expect(source.includes('connectHost(')).toBe(true);
+    expect(entry.includes('connectHost(')).toBe(true);
+    expect(entry.includes('mountPanel(')).toBe(true);
+    // The entry only connects and mounts; every request goes through the seam.
+    expect(entry.includes('serviceRequest(')).toBe(false);
   });
 
   test('carries its provider marks inline, as data URLs', () => {
@@ -79,6 +83,9 @@ describe('panel bundle', () => {
     const beforeReady = source.slice(0, ready);
     expect(beforeReady.includes('mountButton(')).toBe(true);
     expect(beforeReady.includes('mountBadge(')).toBe(true);
+    // One mount each: a repeated snapshot updates the same nodes.
+    expect((source.match(/mountButton\(/g) ?? []).length).toBe(1);
+    expect((source.match(/mountBadge\(/g) ?? []).length).toBe(1);
     // onReady only starts the loop; it must not mount another control.
     expect(source.slice(ready).includes('mountButton(')).toBe(false);
     expect(source.slice(ready).includes('mountBadge(')).toBe(false);

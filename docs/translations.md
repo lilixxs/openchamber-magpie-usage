@@ -12,7 +12,7 @@ hard-coded in the panel source.
 | `panel/locales/zh-CN.json` | Simplified Chinese bundle. |
 | `src/i18n/messages.ts` | Interpolation, plural selection, fallback chain. |
 | `src/i18n/locale.ts` | Registry parsing, locale resolution, bundle loading. |
-| `src/panel/main.ts` | Imports every bundle and owns the active translator. |
+| `src/panel/app.ts` | Imports every bundle and owns the active translator. |
 
 ## Bundling (read this before adding a language)
 
@@ -27,7 +27,7 @@ import zhCN from '../../panel/locales/zh-CN.json';
 ```
 
 Adding a language is a data change **plus two import lines and one map entry**
-in `src/panel/main.ts`, then a rebuild of `panel/main.js`. It is not a runtime
+in `src/panel/app.ts`, then a rebuild of `panel/main.js`. It is not a runtime
 drop-in like a web application. The registry is still the single list of
 `code`/`name`/`dir`; a new code that is not in the map cannot resolve.
 
@@ -68,7 +68,7 @@ the table above is orientation only.
 1. Copy `panel/locales/en.json` to `panel/locales/<code>.json` and translate the
    values. Keep keys and placeholders unchanged.
 2. Add one line to `panel/locales/index.json`.
-3. Import the JSON in `src/panel/main.ts`, add it to the `MESSAGES` map, and add
+3. Import the JSON in `src/panel/app.ts`, add it to the `MESSAGES` map, and add
    its `code` to the registry-driven resolution. The map is the only place that
    knows which bundle files are packaged.
 4. Run `bun install && bun run check`.
