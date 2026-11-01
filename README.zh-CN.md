@@ -70,7 +70,7 @@ OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以
 </tr>
 <tr>
 <td><sub><b>OpenChamber</b>，7 天。</sub></td>
-<td><sub><b>magpie 桌面端</b>，7 天。两次读取相隔几秒，聚合口径也不完全相同。</sub></td>
+<td><sub><b>magpie 桌面端</b>，7 天。两次读取不是同一时刻，聚合口径也不完全相同。</sub></td>
 </tr>
 </table>
 
@@ -168,7 +168,7 @@ OpenChamber 右侧栏扩展，用于查看 Magpie 的用量汇总、趋势，以
 </tr>
 <tr>
 <td><sub><b>OpenChamber</b>：上游字符串拆成独立的标签/数值行。本次读取为 $26.36。</sub></td>
-<td><sub><b>magpie 桌面端</b>：同样的字段，稍后读取为 $25.11。两次读取不是同一时刻；这一对比较的是布局，不是分币级数值。</sub></td>
+<td><sub><b>magpie 桌面端</b>：同样的字段，数值为 $25.11。两次读取不是同一时刻；这一对比较的是布局，不是分币级数值。</sub></td>
 </tr>
 </table>
 

@@ -70,7 +70,7 @@ The `today` / `7d` / `30d` switch changes the upstream period.
 </tr>
 <tr>
 <td><sub><b>OpenChamber</b>, 7 days.</sub></td>
-<td><sub><b>magpie desktop</b>, 7 days. The two reads were taken seconds apart; the aggregation rules are not identical.</sub></td>
+<td><sub><b>magpie desktop</b>, 7 days. The two reads are not simultaneous; the aggregation rules are not identical.</sub></td>
 </tr>
 </table>
 
@@ -168,7 +168,7 @@ Balance cards split the upstream ` · `-joined string into label/value rows: the
 </tr>
 <tr>
 <td><sub><b>OpenChamber</b>: the upstream string becomes separate label/value rows. This read is $26.36.</sub></td>
-<td><sub><b>magpie desktop</b>: the same fields, read later at $25.11. The reads are not simultaneous; this pair compares the layout, not the cents.</sub></td>
+<td><sub><b>magpie desktop</b>: the same fields at $25.11. The reads are not simultaneous; this pair compares the layout, not the cents.</sub></td>
 </tr>
 </table>
 
