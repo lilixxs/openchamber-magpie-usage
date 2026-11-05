@@ -11,6 +11,14 @@ export const DEFAULT_REFRESH_SECONDS = 60;
 export const MIN_REFRESH_SECONDS = 5;
 export const MAX_REFRESH_SECONDS = 3600;
 
+/**
+ * The panel's base is 14px at 100%; the type was authored at 12px, so 100%
+ * renders the old design at 14/12. The range mirrors the host's font-size slider.
+ */
+export const DEFAULT_FONT_SCALE = 100;
+export const MIN_FONT_SCALE = 50;
+export const MAX_FONT_SCALE = 200;
+
 export const CONFIG_DIR_NAME = 'openchamber-magpie-usage';
 export const CONFIG_FILE_NAME = 'config.json';
 /** Shown in the README and in error text; the service reports the absolute path. */
@@ -63,6 +71,10 @@ export type ServiceConfig = {
   loopback: boolean;
   apiKey: string | null;
   refreshSeconds: number;
+  /** Panel type scale in percent; 100 renders the 14px base. */
+  fontScale: number;
+  /** True when `fontScale` was present but not an integer in range. */
+  fontScaleInvalid: boolean;
   /** Quota card order, oldest first. Lenient: a bad value never breaks the rest. */
   cardOrder: string[];
   /** Language setting; `auto` when missing or unusable. */
@@ -83,6 +95,8 @@ export type ConfigReport = {
   loopback: boolean;
   apiKeyConfigured: boolean;
   refreshSeconds: number;
+  fontScale: number;
+  fontScaleInvalid: boolean;
   cardOrder: string[];
   /** Language setting; `auto` when missing or unusable. */
   language: string;
@@ -101,6 +115,8 @@ export const fallbackConfig = (): ServiceConfig => ({
   loopback: true,
   apiKey: null,
   refreshSeconds: DEFAULT_REFRESH_SECONDS,
+  fontScale: DEFAULT_FONT_SCALE,
+  fontScaleInvalid: false,
   cardOrder: [],
   language: DEFAULT_LANGUAGE,
   languageInvalid: false,
@@ -214,6 +230,24 @@ const parseConfigObject = (value: Record<string, unknown>): { ok: true; config: 
     refreshSeconds = raw;
   }
 
+  // A bad type scale is cosmetic: keep the endpoint and key and fall back to 100.
+  let fontScale = DEFAULT_FONT_SCALE;
+  let fontScaleInvalid = false;
+  if (value.fontScale !== undefined) {
+    const raw = value.fontScale;
+    if (
+      typeof raw !== 'number' ||
+      !Number.isFinite(raw) ||
+      !Number.isInteger(raw) ||
+      raw < MIN_FONT_SCALE ||
+      raw > MAX_FONT_SCALE
+    ) {
+      fontScaleInvalid = true;
+    } else {
+      fontScale = raw;
+    }
+  }
+
   // A bad language never resets the endpoint or the key: it falls back to auto
   // and the panel shows a notice. The service does not decide whether the code
   // exists; the panel checks it against the locale registry.
@@ -232,6 +266,8 @@ const parseConfigObject = (value: Record<string, unknown>): { ok: true; config: 
       loopback,
       apiKey,
       refreshSeconds,
+      fontScale,
+      fontScaleInvalid,
       cardOrder: parseCardOrder(value.cardOrder),
       language,
       languageInvalid,

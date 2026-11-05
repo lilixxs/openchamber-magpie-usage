@@ -31,18 +31,63 @@ bun run typecheck      # tsc --noEmit
 - `service/main.js` 用 `--node` 构建；保留 ESM 与 Node 内置模块。
 - 两个产物都要提交。改了源码却没有重建产物，视为未完成。
 - 构建脚本不创建输出目录。新增输出目录时，先提交其中的第一个产物，或在构建前手动建目录。
+- `bun run build` 只产出上面两个 JS 文件。`panel/index.html`、`panel/styles.css` 与 `panel/fonts/*` 是静态包文件：`index.html` 链接样式表，样式表的六条 `@font-face` 指向 `./fonts/*.woff2`。它们不是构建产物。
 
-面板入口是 `src/panel/main.ts`（`connectHost()` 与挂载）。面板实现是 `src/panel/app.ts`（`mountPanel`）。语言包由 `app.ts` 导入，并在构建期内联进 `panel/main.js`。
+面板入口是 `src/panel/main.ts`（`connectHost()` 与挂载）。面板实现是 `src/panel/app.ts`（`mountPanel`）。运行时语言包由 `app.ts` 导入，并在构建期内联进 `panel/main.js`。
+
+## 字体
+
+面板在 `panel/fonts/` 内置六个 woff2 字面，由 `panel/styles.css` 中包内相对 URL 的 `@font-face` 声明。没有远程字体 CSS，也没有离开本机的字体请求；没有内置阿拉伯字体，资源合计约 1.05 MB。
+
+| 文件 | 固定来源 | 处理方式 |
+| --- | --- | --- |
+| `plex-sans-400.woff2`、`plex-sans-600.woff2` | `@ibm/plex-sans` 1.1.0 | 未改动，保留原族名，OFL-1.1。 |
+| `plex-mono-400.woff2`、`plex-mono-500.woff2` | `@ibm/plex-mono` 2.5.0 | 未改动，保留原族名，OFL-1.1。 |
+| `magpie-sans-sc-400.woff2`、`magpie-sans-sc-600.woff2` | `@ibm/plex-sans-sc` 1.1.0 | 3500 常用汉字 + CJK 标点子集，已改名，OFL-1.1。 |
+
+许可规则（OFL 保留字体名）：IBM Plex 的 OFL 声明了保留字体名 "Plex"。拉丁与等宽文件未改动，保留原名；简体中文字体是修改版，任何 name 记录都不得再带保留名——因此以 **Magpie Sans SC** 发布。字形设计不变，只有字符集与 name 记录不同。`panel/fonts/OFL.txt` 是许可全文，`panel/fonts/NOTICE.md` 记录修改声明，`panel/fonts/manifest.json` 记录固定来源、字节数与 SHA-256 摘要。绝不要把子集改回 IBM Plex 的名字。
+
+重新生成：
+
+```bash
+python -m pip install fonttools brotli
+python tools/fonts/build.py
+```
+
+生成器需要 Python 3.10+ 以及访问 jsdelivr 的网络。它下载上面固定的 npm 版本，用 `tools/fonts/chars-3500.txt`（至少 3500 个不重复字符）对两个 SC 字面做子集化，重写 name 记录，任何改名后的记录若仍含 "plex" 就直接失败，然后重写 `OFL.txt`、`NOTICE.md` 与 `manifest.json` 并强制单文件体积预算。重新生成的 `.woff2` 要与这三个文件一起提交。`tests/fonts.test.ts` 会再次检查字面数量、仅本地 URL、改名族名、体积预算与许可文件。
+
+## 字号（fontScale）
+
+`config.json` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:3425",
+  "refreshSeconds": 60,
+  "fontScale": 100,
+  "language": "auto"
+}
+```
+
+它是面板对 OpenChamber 界面字号设置的手动等价物。宿主不会把该百分比传给 guest 帧：SDK 2.5.1 的 `HostReadyContext` 只带 font、mono 与 radius，`applyHostReady` 给 guest 根写 `0.875rem`，面板随后在每次 `onReady` 后按缩放值覆盖。因此配置卡显示当前百分比，并提示用户把 `fontScale` 设成与 OpenChamber 相同的百分比。
+
+契约：
+
+- 非法值（非整数或越界）回退 100 并置 `fontScaleInvalid`。`GET /config` 回传 `fontScale` 与 `fontScaleInvalid`，面板显示可见提示，端点与 API 密钥不受影响。
+- `POST /config/order` 只合并 `cardOrder`，保留 `fontScale`。
+- 超过 125% 时图表标签抽稀：7 天序列隔天显示，24/30 桶序列每 8 桶显示一个。
+- 覆盖：`tests/config.test.ts`（解析与回退）、`tests/service.test.ts`（`/config` 回报）、`tests/panel-host.test.ts`（重复 ready 后的根字号、无效提示、100% 与 150% 的标签密度）。
 
 ## 测试
 
 ```bash
 bun test
 bun test tests/quotas.test.ts
+bun test tests/fonts.test.ts
 bun run check   # 类型检查 -> 全部测试 -> 构建
 ```
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。
+测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 233 个通过的测试。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 
@@ -52,14 +97,14 @@ git diff --exit-code -- panel/main.js service/main.js
 
 ## 调试
 
-没有开发服务器。实际循环是：构建，把目录作为本地扩展安装，打开面板，读配置卡与服务状态徽章。配置卡显示配置路径、生效端点、是否配置密钥、刷新间隔、配置问题与重置备份路径。错误卡显示服务给出的类别、状态码与端点。
+没有开发服务器。实际循环是：构建，把目录作为本地扩展安装，打开面板，读配置卡与服务状态徽章。配置卡显示配置路径、生效端点、是否配置密钥、刷新间隔、当前 `fontScale` 百分比、配置问题与重置备份路径。错误卡显示服务给出的类别、状态码与端点。
 
 常用检查：
 
 - `bun test tests/service.test.ts` 检查服务契约。
 - `bun test tests/panel-host.test.ts` 检查面板到宿主的桥接。
 - `GET /health` 返回 `{ ok, name, apiVersion }`。服务只绑 `127.0.0.1`，要求 `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN`。如果必须探测运行中的服务，使用环境里的宿主 token；不要把 token 粘进 issue、日志或提交。
-- `GET /config` 显示 `language`、`languageInvalid`、`cardOrder`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。
+- `GET /config` 显示 `language`、`languageInvalid`、`cardOrder`、`fontScale`、`fontScaleInvalid`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。
 - 上游网关是环回地址时可直接探测：`GET http://127.0.0.1:3425/v1/magpie/usage?period=today` 与 `GET http://127.0.0.1:3425/v1/magpie/quotas`。
 
 服务每个请求都重读 `config.json`，改好文件即可生效，不用重启。语言改动在下一轮面板刷新（默认 60 秒）生效。服务不记录 token；不要破坏这一点。
@@ -120,7 +165,7 @@ git diff --exit-code -- panel/main.js service/main.js
 
 ### 构建期内联
 
-面板打包给沙箱 iframe，bundle 测试禁止 `fetch` 与 `XMLHttpRequest`。因此每个语言文件都在构建时导入：
+面板打包给沙箱 iframe，bundle 测试禁止 `fetch` 与 `XMLHttpRequest`。因此每个运行时语言文件都在构建时导入：
 
 ```ts
 import en from '../../panel/locales/en.json';
@@ -128,7 +173,9 @@ import localeIndex from '../../panel/locales/index.json';
 import zhCN from '../../panel/locales/zh-CN.json';
 ```
 
-新增语言是数据改动，**加上 `src/panel/app.ts` 里的 import 与一个 map 条目**，然后重建 `panel/main.js`。它不是 Web 应用那种运行时投放。注册表仍是 `code`/`name`/`dir` 的唯一列表；不在 map 里的 code 无法解析。
+只导入 `en` 与 `zh-CN`。`panel/locales/ar.json` 在注册表里标了 `"test": true`，有意不导入：`src/panel/app.ts` 的 `localeCodes()` 会把 `test` 条目从运行时注册表里过滤掉，测试夹具因此永远不会进入 `MESSAGES` 或产物。夹具仍通过 `tests/i18n.test.ts` 参与键、复数与方向检查。
+
+新增语言是数据改动，**加上 `src/panel/app.ts` 里的 import 与一个 map 条目**，然后重建 `panel/main.js`。它不是 Web 应用那种运行时投放。注册表仍是 `code`/`name`/`dir` 的唯一列表；不在 map 里的 code 无法解析。标了 `test: true` 的条目是例外：永远不加 import，也不加 map 条目。
 
 ### 键
 
@@ -179,7 +226,7 @@ import zhCN from '../../panel/locales/zh-CN.json';
 }
 ```
 
-`language` 为 `auto`、`en` 或 `zh-CN`。大小写敏感，必须等于 `index.json` 的 `code`。`auto` 跟随宿主 locale 的精确匹配（`zh-CN` 显示简体中文）；其他宿主 locale 都显示英文。
+`language` 为 `auto`、`en` 或 `zh-CN`。大小写敏感，必须等于 `index.json` 中非 `test` 的 `code`；标了 `test` 的条目（如 `ar`）不是运行时语言。`auto` 跟随宿主 locale 的精确匹配（`zh-CN` 显示简体中文）；其他宿主 locale 都显示英文——包括 `ar`，它解析为英文、`dir=ltr`，使用包内英文字体。没有内置阿拉伯字体，动态数据里的阿拉伯字符回退到系统字体。
 
 服务每次请求都读文件，并在 `GET /config` 返回 `language` 与 `languageInvalid`。面板每轮刷新（默认 60 秒）读 `/config`，语言改动在下一轮刷新生效，不用重启服务或应用。
 
@@ -187,7 +234,8 @@ import zhCN from '../../panel/locales/zh-CN.json';
 | --- | --- |
 | `language` 缺失 | `auto`；无提示。 |
 | `language` 不是非空字符串 | `auto`；`languageInvalid` 为 true，面板显示带路径的提示。端点与密钥照常生效。 |
-| 合法字符串但不在 `index.json` | `auto`；面板显示带路径的 `config.language.unsupported`。 |
+| 合法字符串但不是运行时 code（未知，或 `ar` 这类 `test` 夹具） | `auto`；面板显示带路径的 `config.language.unsupported`。 |
+| 宿主 locale 为 `ar`（测试夹具） | `auto` 解析为英文、`dir=ltr`；无提示。 |
 | 文件缺失 | `auto`；原有的「No config file yet」说明使用宿主语言。 |
 | JSON 非法 | `auto`；原有配置问题说明使用宿主语言。 |
 | 服务不可用 | 面板保持英文；服务卡显示原有错误。 |
@@ -198,6 +246,7 @@ import zhCN from '../../panel/locales/zh-CN.json';
 
 - `bun run check` 通过。
 - `git diff --exit-code -- panel/main.js service/main.js` 退出码为 0。
+- 内置字体与 `panel/fonts/manifest.json` 一致；`panel/styles.css` 里没有远程字体 URL；修改后的子集仍用 `Magpie Sans SC` 族名，绝不带保留名 `Plex`。
 - 新增 UI 文案同时进入 `en.json` 与 `zh-CN.json`（以及其他已注册语言包）。
 - 新行为有测试覆盖，没有 skip。
 - 截图符合命名、配对、裁切、脱敏与宽度规则。

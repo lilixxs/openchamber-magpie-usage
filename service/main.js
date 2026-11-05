@@ -6,6 +6,9 @@ var DEFAULT_BASE_URL = "http://127.0.0.1:3425";
 var DEFAULT_REFRESH_SECONDS = 60;
 var MIN_REFRESH_SECONDS = 5;
 var MAX_REFRESH_SECONDS = 3600;
+var DEFAULT_FONT_SCALE = 100;
+var MIN_FONT_SCALE = 50;
+var MAX_FONT_SCALE = 200;
 var CONFIG_DIR_NAME = "openchamber-magpie-usage";
 var CONFIG_FILE_NAME = "config.json";
 var CONFIG_RELATIVE_PATH = `~/.config/${CONFIG_DIR_NAME}/${CONFIG_FILE_NAME}`;
@@ -20,6 +23,8 @@ var fallbackConfig = () => ({
   loopback: true,
   apiKey: null,
   refreshSeconds: DEFAULT_REFRESH_SECONDS,
+  fontScale: DEFAULT_FONT_SCALE,
+  fontScaleInvalid: false,
   cardOrder: [],
   language: DEFAULT_LANGUAGE,
   languageInvalid: false,
@@ -115,6 +120,16 @@ var parseConfigObject = (value) => {
     }
     refreshSeconds = raw;
   }
+  let fontScale = DEFAULT_FONT_SCALE;
+  let fontScaleInvalid = false;
+  if (value.fontScale !== undefined) {
+    const raw = value.fontScale;
+    if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw) || raw < MIN_FONT_SCALE || raw > MAX_FONT_SCALE) {
+      fontScaleInvalid = true;
+    } else {
+      fontScale = raw;
+    }
+  }
   let language = DEFAULT_LANGUAGE;
   let languageInvalid = false;
   if (value.language !== undefined) {
@@ -131,6 +146,8 @@ var parseConfigObject = (value) => {
       loopback,
       apiKey,
       refreshSeconds,
+      fontScale,
+      fontScaleInvalid,
       cardOrder: parseCardOrder(value.cardOrder),
       language,
       languageInvalid,
@@ -654,6 +671,8 @@ var createService = (options) => {
         loopback: config.loopback,
         apiKeyConfigured: config.apiKey !== null,
         refreshSeconds: config.refreshSeconds,
+        fontScale: config.fontScale,
+        fontScaleInvalid: config.fontScaleInvalid,
         cardOrder: config.cardOrder,
         language: config.language,
         languageInvalid: config.languageInvalid,

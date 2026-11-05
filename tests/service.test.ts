@@ -76,6 +76,7 @@ describe('POST /config/order', () => {
       baseUrl: 'https://magpie.example.com',
       apiKey: key,
       refreshSeconds: 90,
+      fontScale: 150,
       keepMe: { nested: true },
     });
     const service = await startService({ configPath });
@@ -89,6 +90,7 @@ describe('POST /config/order', () => {
       baseUrl: 'https://magpie.example.com',
       apiKey: key,
       refreshSeconds: 90,
+      fontScale: 150,
       keepMe: { nested: true },
       cardOrder: order,
     });
@@ -100,6 +102,8 @@ describe('POST /config/order', () => {
     // /config reports the new order, so a reopened panel starts with it.
     const report = JSON.parse((await call(service.url, '/config')).body);
     expect(report.cardOrder).toEqual(order);
+    expect(report.fontScale).toBe(150);
+    expect(report.fontScaleInvalid).toBe(false);
     expect(report.reset).toBeNull();
     expect(answer.body.includes(key)).toBe(false);
   });
@@ -246,6 +250,8 @@ describe('/config', () => {
       loopback: true,
       apiKeyConfigured: false,
       refreshSeconds: 60,
+      fontScale: 100,
+      fontScaleInvalid: false,
       cardOrder: [],
       language: 'auto',
       languageInvalid: false,

@@ -37,6 +37,8 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 `package.json` 声明 `engines.openchamber` 为 `>=2.5.0`，并把 `@openchamber/sdk` 固定在 `2.5.1`。
 
+已安装的包在 `panel/fonts/` 内置约 1.05 MB 的 woff2 字体。它们由 `panel/styles.css` 里包内相对路径的 `@font-face` 声明；面板不加载任何远程字体 CSS，也不发出离开本机的字体请求。
+
 ## 面板显示什么
 
 所有数字都来自本地服务。页脚写明了口径：这是本机网关记录的、发往该端点的用量，不是该端点的全部用量，也不包含其他客户端直连该端点产生的请求。
@@ -87,7 +89,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 ### 趋势
 
-面板按上游 `series` 的每个桶画一根柱。每根柱分为输入（含缓存）与输出。桶太多时标签抽稀到 6 或 5 个，最后一根始终保留标签。
+面板按上游 `series` 的每个桶画一根柱。每根柱分为输入（含缓存）与输出。桶太多时标签抽稀到 6 或 5 个，最后一根始终保留标签。`fontScale` 超过 125% 时标签进一步抽稀：7 天序列隔天显示，24/30 桶序列每 8 桶显示一个。
 
 <table>
 <tr>
@@ -195,9 +197,20 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 <p><sub><code>Our Free Model</code> 与 <code>OpenRouter</code> 各自失败，其余 10 张卡照常渲染。magpie 桌面端没有对应这种传输错误的卡片——它最接近的状态是额度页的「暂时无法获取额度」，那是另一套契约——因此这一组只截 OpenChamber。</sub></p>
 
+### 排版与字体
+
+面板自带字体，从不请求远程字体。六个 woff2 字面位于 `panel/fonts/`，由 `panel/styles.css` 中的 `@font-face` 声明，全部使用包内相对 URL：
+
+- IBM Plex Sans 400/600 与 IBM Plex Mono 400/500：未改动，OFL-1.1，保留原族名。
+- Magpie Sans SC 400/600：IBM Plex Sans SC 的 3500 常用汉字 + CJK 标点子集。改名是因为 IBM Plex 的 OFL 声明了保留字体名 "Plex"，修改版不得再使用它；字形设计不变。
+
+没有内置阿拉伯字体；字体资源合计约 1.05 MB。`panel/fonts/OFL.txt`、`NOTICE.md` 与 `manifest.json` 分别保存许可全文、修改声明，以及带字节数与 SHA-256 摘要的固定来源清单。生成器是 `tools/fonts/build.py`，配 `tools/fonts/chars-3500.txt`；见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
+
+面板里所有字号都用 rem。`config.json` 的 `fontScale` 把根字号设为 `14px × fontScale / 100`，因此 100 对应 14px 基准；字号按 12px 设计稿编写，所以 100% 同时是旧尺寸的 14/12（约 +16.7%）。`fontScale` 是面板对 OpenChamber 界面字号设置的手动等价物：宿主不会把该百分比传给 guest 帧——SDK 2.5.1 的 `HostReadyContext` 只带 font、mono 与 radius，`applyHostReady` 给 guest 根写 `0.875rem`——所以配置卡会显示当前百分比，并提示把 `fontScale` 设成与 OpenChamber 相同的百分比。`fontScale` 非法时回退到 100 并产生可见提示；端点与 API 密钥不受影响。
+
 ### 配置与语言
 
-配置卡显示配置文件路径、生效端点、是否已配置 API 密钥、刷新间隔、配置问题，以及配置损坏被替换后的备份路径。
+配置卡显示配置文件路径、生效端点、是否已配置 API 密钥、刷新间隔、当前 `fontScale` 百分比、配置问题，以及配置损坏被替换后的备份路径。
 
 <table>
 <tr>
@@ -210,7 +223,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 </tr>
 </table>
 
-面板提供英文与简体中文。把 `config.json` 的 `language` 设为 `en` 或 `zh-CN`；`auto` 跟随宿主语言，只有精确命中 `zh-CN` 才显示中文。下一轮刷新会重读 `/config`，不用重启服务或 OpenChamber。
+面板提供英文与简体中文，运行时只有这两种语言。把 `config.json` 的 `language` 设为 `en` 或 `zh-CN`；`auto` 跟随宿主语言，只有精确命中 `zh-CN` 才显示中文。`panel/locales/ar.json` 以 `"test": true` 夹具的形式留在仓库里，用于键、复数与方向检查，但不再打进运行时产物：宿主语言为 `ar`，或显式写 `language: "ar"`，都会解析为英文、`dir=ltr`，使用包内英文字体。没有内置阿拉伯字体，动态数据里出现的阿拉伯字符（供应商名、额度窗口名）回退到系统字体。下一轮刷新会重读 `/config`，不用重启服务或 OpenChamber。
 
 <img src="docs/images/config-english-openchamber.png" alt="OpenChamber 配置卡在 language 设为 en 后显示英文；绝对文件路径被涂黑" width="860">
 
@@ -231,6 +244,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.json
   "baseUrl": "http://127.0.0.1:3425",
   "apiKey": "可选；非环回端点通常需要",
   "refreshSeconds": 60,
+  "fontScale": 100,
   "cardOrder": ["r-magpie%2Fworkbuddy|subscription|example-user"],
   "language": "auto"
 }
@@ -241,8 +255,9 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.json
 | `baseUrl` | 否 | 绝对 http(s) URL。不得带账号密码、查询串或片段。非环回主机必须用 https。允许带路径前缀。 |
 | `apiKey` | 否 | 非空字符串，不含空白与控制字符。只以 `Authorization: Bearer` 发送，绝不放进 URL。 |
 | `refreshSeconds` | 否 | 整数 5–3600，默认 60。 |
+| `fontScale` | 否 | 整数 50–200，默认 100，对应 14px 基准；根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。非整数或越界时回退 100 并置 `fontScaleInvalid`；端点与密钥照常生效。 |
 | `cardOrder` | 否 | 字符串数组，最多 500 项，每项 1–200 字符。宽松解析：值不是数组、含非字符串项、项超长或超量时只丢坏的部分，其余配置照常生效。顺序只影响外观，绝不会让端点降级。 |
-| `language` | 否 | `auto`（默认）、`en` 或 `zh-CN`。大小写敏感，必须等于 `panel/locales/index.json` 的 `code`。非字符串或空串回退 `auto` 并提示；端点与密钥照常生效。 |
+| `language` | 否 | `auto`（默认）、`en` 或 `zh-CN`。大小写敏感，必须等于 `panel/locales/index.json` 中非 `test` 的 `code`（标了 `test` 的条目如 `ar` 不是运行时语言）。非字符串或空串回退 `auto` 并提示；端点与密钥照常生效。 |
 
 行为：
 
@@ -251,6 +266,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.json
 - 服务每个请求都重读文件。保存即生效，不用重启服务或应用。
 - `apiKey` 可以缺失或为 `null`，两者都表示「未配置」。其他非字符串值不合法；空字符串也不是合法密钥。
 - `cardOrder` 的键为 `encodeURIComponent(provider)|encodeURIComponent(kind)|encodeURIComponent(user)`。同一三元组的第二、第三张卡追加 `#2`、`#3`。网关已不存在的键会被忽略；新增卡片按网关顺序排在末尾。
+- `fontScale` 是面板对 OpenChamber 界面字号设置的手动等价物；宿主不会把该百分比传给 guest 帧。`GET /config` 回传 `fontScale` 与 `fontScaleInvalid`，`POST /config/order` 保留 `fontScale`。
 - 写文件统一 2 空格缩进 + 结尾换行，保留未知顶层键，沿用原文件权限（读不到时 0600），先写临时文件再 `rename` 覆盖。
 - 写顺序时若文件不是合法 JSON 对象：先把原文复制为 `config.json.bak`（已存在则 `config.json.bak-<UTC 时间戳>`），再写入只含 `cardOrder` 的合法文件，配置卡保留提示。文件缺失时新建，并移除「No config file yet」提示。
 
@@ -263,7 +279,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.json
 | 路径 | 作用 |
 | --- | --- |
 | `GET /health` | 原有契约 `{ ok, name, apiVersion }`，未改动。 |
-| `GET /config` | 配置路径、生效端点、`apiKeyConfigured`、刷新间隔、`cardOrder`、`reset`（配置被替换后的 `{ at, backupPath }`，否则 `null`）、`language`、`languageInvalid` 与配置问题。 |
+| `GET /config` | 配置路径、生效端点、`apiKeyConfigured`、刷新间隔、`fontScale`、`fontScaleInvalid`、`cardOrder`、`reset`（配置被替换后的 `{ at, backupPath }`，否则 `null`）、`language`、`languageInvalid` 与配置问题。 |
 | `POST /config/order` | 体 `{ "order": string[] }`；200 `{ ok: true, order, reset }`。体上限 64 KiB；1–500 个字符串、每个 1–200 字符；其余一律 400 `bad-request`。 |
 | `GET /v1/magpie/usage?period=today\|7d\|30d` | 规范化后的用量汇总。 |
 | `GET /v1/magpie/quotas?kept=1` | 优先读上游缓存。 |
@@ -272,6 +288,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.json
 写顺序的细节：
 
 - 同一进程内所有写入串成一条 promise 链，两个面板不会交错读-改-写。
+- 合并只替换 `cardOrder`；`fontScale`、`language`、`refreshSeconds` 与其他顶层键原样保留。
 - 读文件 → 合并 `cardOrder` → 写 `<path>.<pid>.<rand>.tmp` → 按原文件权限 `chmod` 临时文件（读不到时 0600）→ `rename` 覆盖。
 - 文件不是合法 JSON **对象**时：先备份原文（`.bak`，已存在则 `.bak-<UTC 时间戳>`），再写入 `{ "cardOrder": [...] }`，并把 `{ at, backupPath }` 记在内存里供 `/config` 回报。服务重启后提示清空。
 - 文件缺失时直接新建；`present` 变为 `true`，面板的「No config file yet」随之消失。
@@ -320,35 +337,36 @@ bun test tests/quotas.test.ts
 bun run typecheck
 ```
 
-OpenChamber 不编译 TypeScript。`panel/main.js` 与 `service/main.js` 是提交的构建产物。入口链为 `src/panel/main.ts`（`connectHost()` 与挂载）→ `src/panel/app.ts`（`mountPanel`）→ `panel/main.js`；服务入口为 `src/service/main.ts` → `service/main.js`。
+OpenChamber 不编译 TypeScript。`panel/main.js` 与 `service/main.js` 是提交的构建产物。入口链为 `src/panel/main.ts`（`connectHost()` 与挂载）→ `src/panel/app.ts`（`mountPanel`）→ `panel/main.js`；服务入口为 `src/service/main.ts` → `service/main.js`。面板的静态资源不由构建生成：`panel/index.html` 链接 `panel/styles.css`，其中六条 `@font-face` 指向 `panel/fonts/` 里的 woff2 文件。
 
-语言包由 `src/panel/app.ts` 静态导入，并在构建期内联进 `panel/main.js`（面板禁止 `fetch`）。新增语言因此要改 JSON、import 与 `MESSAGES` 映射，然后重建。
+运行时语言包由 `src/panel/app.ts` 静态导入，并在构建期内联进 `panel/main.js`（面板禁止 `fetch`）；只导入 `en` 与 `zh-CN`——`panel/locales/ar.json` 是 `"test": true` 夹具，不进产物。新增语言因此要改 JSON、import 与 `MESSAGES` 映射，然后重建。
 
 CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit-code -- panel/main.js service/main.js`。改源码不重建 bundle 会失败。完整流程、截图约定与翻译规则见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
 
 ### 测试覆盖
 
-`bun test` 全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试用 fake host 与 happy-dom，不启动 HTTP server、不连真实宿主、不读写用户配置目录。
+`bun test` 共 233 个测试，全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试用 fake host 与 happy-dom，不启动 HTTP server、不连真实宿主、不读写用户配置目录。
 
 | 文件 | 内容 |
 | --- | --- |
-| `tests/config.test.ts` | 配置校验：JSON 形状、http/https 规则、环回判定、凭据与查询串、密钥字符、刷新区间、未知键；`cardOrder` 宽松解析、顺序键编码、`#2` 后缀、已知/未知/过期键的排序；`language` 默认值、显式值、坏值回退且不降级端点。 |
-| `tests/i18n.test.ts` | 注册表合法性、键齐全、占位符一致、CLDR 复数类别（en 的 `one/other`、zh-CN 的 `other`）、插值/回退、`resolveLocale` 的精确匹配与 unsupported 标记。 |
+| `tests/config.test.ts` | 配置校验：JSON 形状、http/https 规则、环回判定、凭据与查询串、密钥字符、刷新区间、未知键；`cardOrder` 宽松解析、顺序键编码、`#2` 后缀、已知/未知/过期键的排序；`language` 默认值、显式值、坏值回退且不降级端点；`fontScale` 默认值、50–200 区间与坏值回退且不降级端点。 |
+| `tests/i18n.test.ts` | 注册表合法性、键齐全、占位符一致、CLDR 复数类别（en 的 `one/other`、zh-CN 的 `other`）、插值/回退、`resolveLocale` 的精确匹配与 unsupported 标记；阿拉伯语 `test` 夹具是 RTL 但绝不是运行时匹配。 |
+| `tests/fonts.test.ts` | 六条本地 `@font-face` 字面、包内相对 woff2 URL 且无远程 URL；`panel/styles.css` 中改名后的 `Magpie Sans SC` 族名且没有 `IBM Plex Sans SC` 字样；单文件与总量体积预算；rem 字号（唯一的 px 字号是 14px 根字号）与包内 body 字体栈；`OFL.txt`、`NOTICE.md`（含 “Modified Version” 措辞）与 `manifest.json` 来源信息。 |
 | `tests/format.test.ts` | 数字/成本/积分/百分比/时间格式化，命中率分母为 0，窗口百分比回退链，金额行优先级。 |
 | `tests/quotas-view.test.ts` | pool 分组与分层折叠（Antigravity 3 行、9 个分层隐藏）、时长排序、无 pool 窗口共用一行、剩余口径金额行、余额拆分、最紧剩余、图标映射与兜底。 |
-| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 三条路径、改文件即时生效、方法与路径组合 405/404；`POST /config/order` 的写入、保留未知键与权限、缺失时新建、非法文件备份+重置+回报、拒绝坏体与超大体积、并发写入、401。 |
+| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 三条路径（回报含 `fontScale`/`fontScaleInvalid`）、改文件即时生效、方法与路径组合 405/404；`POST /config/order` 的写入、保留未知键与权限、缺失时新建、非法文件备份+重置+回报、拒绝坏体与超大体积、并发写入、401。 |
 | `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符。 |
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
 | `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、无存储、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
-| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`。 |
+| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；100% 与 150% 下的图表标签密度。 |
 | `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
 | `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
 | `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |
 
 ## 验证
 
-2026-11-01 验证：
+2026-11-01 验证。该记录早于内置字体、`fontScale` 与语言回退改动；套件当前有 233 个通过的测试，`bun run check` 仍是门禁。下面的哈希与字节数属于那次构建：
 
 - `bun run check` 全绿：类型检查、12 个文件共 211 个测试（0 失败、1,783 次断言）、两次构建。
 - 连续两次构建字节一致。SHA-256：
@@ -365,6 +383,8 @@ CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit
 
 未验证：
 
+- `docs/images/` 里的截图拍摄于内置字体之前，并未展示它们；应在安装 0.3.0 后重新截取。
+- 六个 woff2 尚未在已安装宿主中实测加载。它们经 guest 文件中继提供；若中继拒绝 `.woff2`，`font-display: swap` 会静默回退系统字体。
 - Electron 右侧栏外壳与权限批准对话框：截图使用真实安装的扩展在 OpenChamber 界面中运行，但宿主窗口外壳被裁掉。
 - 完整 `--oc-*` 主题矩阵：截图中的面板是浅色主题；深色宿主主题未逐一对比。
 - 其他 magpie 版本的窗口命名与 `pool` 字段：折叠规则只认 `(High|Low|Medium)`，且只作用于有 pool 的窗口。
@@ -372,11 +392,13 @@ CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit
 
 ### 从右到左的布局
 
-`panel/locales/ar.json` 是夹具，不是提供给用户的语言。它存在只为让 RTL 路径持续被覆盖：词条齐全（键、阿拉伯语的六种 CLDR 复数类别、与英文一致的占位符），并在注册表里标了 `"test": true`。
+`panel/locales/ar.json` 是夹具，不是提供给用户的语言：注册表里标了 `"test": true`，且它不再被打进运行时产物。运行时只有 `en` 与 `zh-CN`。夹具仍参与键、复数与方向检查：键齐全、阿拉伯语的六种 CLDR 复数类别、与英文一致的占位符。
 
-在配置文件里写 `"language": "ar"` 并重开面板。`src/panel/app.ts` 把注册表的 `dir` 写到 `<html dir>`，布局随之镜像；`panel/styles.css` 在 `[dir='rtl']` 下去掉拉丁文案使用的字距，因为字距会拆开阿拉伯语连写。
+宿主语言为 `ar`，或配置文件里显式写 `"language": "ar"`，都会解析为英文、`dir=ltr`，使用包内英文字体；显式值不在运行时注册表内时还会显示 `config.language.unsupported` 提示。没有内置阿拉伯字体，动态数据里的阿拉伯字符（供应商名、额度窗口名）回退到系统字体。原先面板级的阿拉伯语 RTL 测试已被回退测试取代。
 
-未覆盖：阿语文案是为测试排版而写，未经母语校对；夹具覆盖的是面板，不包括宿主自己的窗口外壳。
+`panel/styles.css` 仍在 `[dir='rtl']` 下去掉拉丁文案使用的字距（字距会拆开阿拉伯语连写），但当前没有任何运行时语言解析为 `dir="rtl"`。
+
+未覆盖：阿语文案是为测试排版而写，未经母语校对；在只有 `en` 与 `zh-CN` 运行期间，镜像布局无法通过配置触达。
 
 ## 许可
 

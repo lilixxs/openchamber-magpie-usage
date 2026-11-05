@@ -3,14 +3,16 @@ import { applyHostReady, mountBadge, mountButton } from '@openchamber/sdk/ui';
 import type { HostClient, ServiceStatus } from '@openchamber/sdk';
 
 import manifest from '../../package.json';
-import ar from '../../panel/locales/ar.json';
 import en from '../../panel/locales/en.json';
 import localeIndex from '../../panel/locales/index.json';
 import zhCN from '../../panel/locales/zh-CN.json';
 import { createTranslator, type MessageVars, type Messages, type Translator } from '../i18n/messages.ts';
 import { readRegistry, resolveLocale, type LocaleEntry } from '../i18n/locale.ts';
 import {
+  DEFAULT_FONT_SCALE,
   DEFAULT_REFRESH_SECONDS,
+  MAX_FONT_SCALE,
+  MIN_FONT_SCALE,
   PERIODS,
   applyCardOrder,
   cardOrderKeys,
@@ -205,9 +207,21 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   configReset.hidden = true;
   const configLanguage = el('p', 'issue');
   configLanguage.hidden = true;
+  const configFontScale = el('p', 'issue');
+  configFontScale.hidden = true;
   const configNote = el('p', 'note');
   configNote.hidden = true;
-  configCard.append(configHead, configRows, configIssue, configReset, configLanguage, configNote);
+  const configFontNote = el('p', 'note', t('config.fontScale.note'));
+  configCard.append(
+    configHead,
+    configRows,
+    configIssue,
+    configReset,
+    configLanguage,
+    configFontScale,
+    configNote,
+    configFontNote,
+  );
 
   type ConfigRow = { key: HTMLElement; value: HTMLElement };
 
@@ -224,10 +238,12 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const endpointRow = configRow('config.endpoint');
   const keyRow = configRow('config.apiKey');
   const refreshRow = configRow('config.refresh');
+  const fontScaleRow = configRow('config.fontScale');
   const configPathValue = configPathRow.value;
   const endpointValue = endpointRow.value;
   const keyValue = keyRow.value;
   const refreshValue = refreshRow.value;
+  const fontScaleValue = fontScaleRow.value;
 
   const footer = el('p', 'footer', t('footer.data'));
 
@@ -291,6 +307,22 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     loadedOnce: false,
   };
 
+  let activeFontScale = DEFAULT_FONT_SCALE;
+
+  /**
+   * The host has no font-size token for guests (SDK 2.5.1); `fontScale` in the
+   * config is the panel's manual equivalent. The root is set after every
+   * `applyHostReady`, which otherwise writes `0.875rem` inline.
+   */
+  const applyFontScale = (scale: number): void => {
+    const safe = Number.isFinite(scale) ? scale : DEFAULT_FONT_SCALE;
+    const next = Math.min(MAX_FONT_SCALE, Math.max(MIN_FONT_SCALE, Math.round(safe)));
+    const changed = next !== activeFontScale;
+    activeFontScale = next;
+    document.documentElement.style.fontSize = `${(14 * next) / 100}px`;
+    if (changed && state.usage) renderUsage();
+  };
+
   /* -------------------------------------------------------------------------- */
   /* Language                                                                   */
   /* -------------------------------------------------------------------------- */
@@ -303,12 +335,13 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const MESSAGES: Record<string, Messages> = {
     en,
     'zh-CN': zhCN as Messages,
-    ar: ar as Messages,
   };
 
   const messagesFor = (code: string): Messages | null => MESSAGES[code] ?? null;
 
-  const localeCodes = (): string[] => registry?.map((entry) => entry.code) ?? [];
+  /** Test locales (for example the Arabic RTL fixture) are never offered at runtime. */
+  const localeCodes = (): string[] =>
+    registry?.filter((entry) => !entry.test).map((entry) => entry.code) ?? [];
 
   const localizedDuration = (ms: number): string => {
     const { days, hours, minutes, seconds } = durationParts(ms);
@@ -353,6 +386,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     setText(endpointRow.key, t('config.endpoint'));
     setText(keyRow.key, t('config.apiKey'));
     setText(refreshRow.key, t('config.refresh'));
+    setText(fontScaleRow.key, t('config.fontScale'));
+    setText(configFontNote, t('config.fontScale.note'));
     setText(footer, t('footer.data'));
 
     refreshButton.update({ label: t('button.refresh') });
@@ -589,6 +624,13 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     endpointValue.title = config.baseUrl;
     setText(keyValue, t(config.apiKeyConfigured ? 'config.configured' : 'config.notConfigured'));
     setText(refreshValue, t('config.everySeconds', { seconds: config.refreshSeconds }));
+    const fontScale = typeof config.fontScale === 'number' ? config.fontScale : DEFAULT_FONT_SCALE;
+    setText(fontScaleValue, `${fontScale}%`);
+    setMessage(
+      configFontScale,
+      config.fontScaleInvalid ? t('config.fontScale.invalid', { path: config.configPath }) : null,
+    );
+    applyFontScale(fontScale);
     setText(
       subtitle,
       t(config.loopback ? 'usage.endpoint.loopback' : 'usage.endpoint.remote', { host: config.host }),
@@ -707,7 +749,9 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       1,
       ...series.map((bucket) => bucket.input + bucket.cacheRead + bucket.cacheWrite + bucket.output),
     );
-    const step = series.length <= 8 ? 1 : series.length <= 31 ? 6 : 5;
+    // Larger type makes dense labels wider; thin them out above 125%.
+    const scale = state.config?.fontScale ?? DEFAULT_FONT_SCALE;
+    const step = series.length <= 8 ? (scale > 125 ? 2 : 1) : series.length <= 31 ? (scale > 125 ? 8 : 6) : 5;
 
     const bars = el('div', 'bars');
     series.forEach((bucket, index) => {
@@ -1220,6 +1264,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     }
   };
 
+  applyStaticLabels();
+
   let started = false;
 
   const unsubscribeReady = host.onReady((context) => {
@@ -1227,6 +1273,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     // Theme and host facts are applied on every snapshot; the controls were
     // mounted once above, so a later snapshot only updates values.
     applyHostReady(context, document.documentElement);
+    applyFontScale(state.config?.fontScale ?? DEFAULT_FONT_SCALE);
     hostLocale = context.locale;
     if (started) {
       if (state.config) renderConfig();

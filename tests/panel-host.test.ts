@@ -208,6 +208,8 @@ const configReport = (overrides: Partial<ConfigReport> = {}): ConfigReport => ({
   loopback: false,
   apiKeyConfigured: true,
   refreshSeconds: 60,
+  fontScale: 100,
+  fontScaleInvalid: false,
   cardOrder: [],
   language: 'auto',
   languageInvalid: false,
@@ -881,14 +883,14 @@ describe('language selection', () => {
     expect(dom.document.documentElement.lang).toBe('en');
   });
 
-  test('the Arabic fixture switches the document to right-to-left', async () => {
+  test('a test-only locale is not offered; Arabic falls back to English', async () => {
     const host = makeHost(withConfig(configReport({ language: 'ar' })));
-    start(host, { locale: 'en' });
+    start(host, { locale: 'ar' });
     await tick();
 
-    expect(dom.document.documentElement.lang).toBe('ar');
-    expect(dom.document.documentElement.dir).toBe('rtl');
-    expect(periodButton('today').textContent).toBe('اليوم');
+    expect(dom.document.documentElement.lang).toBe('en');
+    expect(dom.document.documentElement.dir).toBe('ltr');
+    expect(periodButton('today').textContent).toBe('Today');
   });
 
   test('auto falls back to English when the host locale is not bundled', async () => {
@@ -921,6 +923,121 @@ describe('language selection', () => {
 
     expect(periodButton('today').textContent).toBe('今天');
     expect(languageNotice()).toBe(`${config.configPath} 中的 language 值不是字符串；使用宿主语言。`);
+  });
+});
+
+describe('font scale', () => {
+  test('applies the configured scale to the root after every ready', async () => {
+    const host = makeHost(withConfig(configReport({ fontScale: 150 })));
+    start(host);
+    await tick();
+
+    expect(dom.document.documentElement.style.fontSize).toBe('21px');
+    host.emitReady();
+    await tick();
+    expect(dom.document.documentElement.style.fontSize).toBe('21px');
+    const row = [...root.querySelectorAll('.row')].find((node) => text(node).includes('Font size'));
+    expect(text(row ?? null)).toContain('150%');
+  });
+
+  test('an invalid scale falls back to 100 and explains why', async () => {
+    const host = makeHost(withConfig(configReport({ fontScale: 100, fontScaleInvalid: true })));
+    start(host);
+    await tick();
+
+    expect(dom.document.documentElement.style.fontSize).toBe('14px');
+    const issues = [...root.querySelectorAll('.issue')].map((node) => text(node));
+    expect(issues.some((issue) => issue.includes('50 to 200'))).toBe(true);
+  });
+
+  test('a config without fontScale falls back to 100%', async () => {
+    const config = configReport();
+    delete (config as Partial<ConfigReport>).fontScale;
+    const host = makeHost(withConfig(config));
+    start(host);
+    await tick();
+
+    expect(dom.document.documentElement.style.fontSize).toBe('14px');
+    const row = [...root.querySelectorAll('.row')].find((node) => text(node).includes('Font size'));
+    expect(text(row ?? null)).toContain('100%');
+  });
+});
+
+describe('chart label density', () => {
+  const labels = ['Oct 30', 'Oct 31', 'Nov 1', 'Nov 2', 'Nov 3', 'Nov 4', 'Nov 5'];
+  const series = labels.map((label, index) => ({
+    label,
+    time: `2026-10-${30 + index}T00:00:00.000Z`,
+    calls: 1,
+    input: 1000 + index,
+    output: 100 + index,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+  }));
+
+  const chartHost = (fontScale: number, buckets = series): FakeHost =>
+    makeHost((request) => {
+      if (request.path === '/config') return json(configReport({ fontScale }));
+      if (request.path === '/v1/magpie/usage') return json(usageReport('7d', { series: buckets }));
+      return respondOk(request);
+    });
+
+  const shownLabels = (): string[] =>
+    [...root.querySelectorAll('.bar-label')].map((node) => text(node)).filter((label) => label !== '');
+
+  test('shows every day at 100%', async () => {
+    start(chartHost(100));
+    await tick();
+    expect(shownLabels()).toEqual(labels);
+  });
+
+  test('thins to every other day above 125%', async () => {
+    start(chartHost(150));
+    await tick();
+    expect(shownLabels()).toEqual(['Oct 30', 'Nov 1', 'Nov 3', 'Nov 5']);
+  });
+
+  test('thins a 30-bucket series to every eighth bucket above 125%', async () => {
+    const thirty = Array.from({ length: 30 }, (_, index) => ({
+      ...series[0]!,
+      label: `D${index + 1}`,
+      input: 1000 + index,
+      output: 100 + index,
+    }));
+    start(chartHost(150, thirty));
+    await tick();
+    expect(shownLabels()).toEqual(['D1', 'D9', 'D17', 'D25', 'D30']);
+  });
+
+  test('keeps every label at exactly 125% and thins at 126%', async () => {
+    start(chartHost(125));
+    await tick();
+    expect(shownLabels()).toEqual(labels);
+  });
+
+  test('thins at 126%', async () => {
+    start(chartHost(126));
+    await tick();
+    expect(shownLabels()).toEqual(['Oct 30', 'Nov 1', 'Nov 3', 'Nov 5']);
+  });
+
+  test('a later config refresh re-renders the chart at the new scale', async () => {
+    let current = 100;
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(configReport({ fontScale: current }));
+      if (request.path === '/v1/magpie/usage') return json(usageReport('7d', { series }));
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+    expect(shownLabels()).toEqual(labels);
+
+    current = 150;
+    const refresh = root.querySelector('.refresh-slot button') as HTMLButtonElement;
+    refresh.click();
+    await tick();
+    expect(shownLabels()).toEqual(['Oct 30', 'Nov 1', 'Nov 3', 'Nov 5']);
   });
 });
 

@@ -183,6 +183,8 @@ export const createService = (options: ServiceOptions): LocalService => {
         // Never the key itself, nor its length or a prefix of it.
         apiKeyConfigured: config.apiKey !== null,
         refreshSeconds: config.refreshSeconds,
+        fontScale: config.fontScale,
+        fontScaleInvalid: config.fontScaleInvalid,
         cardOrder: config.cardOrder,
         language: config.language,
         languageInvalid: config.languageInvalid,

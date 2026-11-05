@@ -1,10 +1,83 @@
-/* Colours come only from the host tokens that applyHostReady writes. */
-html,
+/* Bundled fonts. The Chinese subset is renamed Magpie Sans SC: IBM reserves
+ * the font name "Plex", and a modified version may not carry it. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./fonts/plex-sans-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./fonts/plex-sans-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Magpie Sans SC";
+  src: url("./fonts/magpie-sans-sc-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Magpie Sans SC";
+  src: url("./fonts/magpie-sans-sc-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./fonts/plex-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./fonts/plex-mono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Colours come only from the host tokens that applyHostReady writes.
+ * Type was authored at 12px. Each rem below is old px / 12; the 14px root
+ * therefore renders the design at 14/12, which is the requested size increase. */
+html {
+  margin: 0;
+  background: transparent;
+  color: var(--oc-fg);
+  /* Fallback before applyHostReady/applyFontScale; the panel overrides it inline. */
+  font-size: 14px;
+}
+
 body {
   margin: 0;
   background: transparent;
   color: var(--oc-fg);
-  font: 12px/1.5 var(--oc-font);
+  /* Set on body so they win over the host's inline values on :root. */
+  --oc-font: "IBM Plex Sans", "Magpie Sans SC", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --oc-mono: "IBM Plex Mono", "Magpie Sans SC", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font: 1rem/1.5 var(--oc-font);
+}
+
+/* The host look sets the kit's family; keep the panel's bundled family. */
+body .oc-sdk {
+  font-family: var(--oc-font);
+}
+
+/* The SDK badge is the one fixed-px control; keep it on the panel's scale. */
+body .oc-sdk-badge {
+  font-size: 0.9167rem;
+  line-height: 1.3333rem;
 }
 
 * {
@@ -31,7 +104,7 @@ body {
 
 .title {
   margin: 0;
-  font-size: 14px;
+  font-size: 1.1667rem;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -39,7 +112,7 @@ body {
 .subtitle {
   margin: 2px 0 0;
   color: var(--oc-muted);
-  font-size: 10.5px;
+  font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
@@ -72,7 +145,7 @@ body {
   background: transparent;
   color: var(--oc-muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 0.9167rem;
   cursor: pointer;
 }
 
@@ -103,7 +176,7 @@ body {
   border-radius: var(--oc-radius);
   background: color-mix(in srgb, var(--oc-error) 14%, transparent);
   color: var(--oc-error-text);
-  font-size: 11px;
+  font-size: 0.9167rem;
   overflow-wrap: anywhere;
 }
 
@@ -118,7 +191,7 @@ body {
 
 .label {
   color: var(--oc-muted);
-  font-size: 10px;
+  font-size: 0.8333rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -133,7 +206,7 @@ body {
 
 .stamp {
   color: var(--oc-muted);
-  font: 9.5px/1.4 var(--oc-mono);
+  font: 0.7917rem/1.4 var(--oc-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -156,13 +229,13 @@ body {
 
 .kpi-label {
   color: var(--oc-muted);
-  font-size: 9.5px;
+  font-size: 0.7917rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .kpi-value {
-  font-size: 16px;
+  font-size: 1.3333rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -170,11 +243,10 @@ body {
 
 .kpi-sub {
   color: var(--oc-muted);
-  font-size: 9.5px;
+  font-size: 0.7917rem;
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* A larger type scale must wrap rather than hide the sub-line. */
+  overflow-wrap: anywhere;
 }
 
 .chart {
@@ -185,7 +257,9 @@ body {
   display: flex;
   align-items: stretch;
   gap: 2px;
-  height: 92px;
+  /* Auto height so a larger type scale can grow the label row. */
+  height: auto;
+  min-height: 92px;
 }
 
 .bar {
@@ -199,6 +273,7 @@ body {
 
 .bar-track {
   display: flex;
+  flex: none;
   flex-direction: column-reverse;
   height: 72px;
   width: 100%;
@@ -219,7 +294,7 @@ body {
 
 .bar-label {
   color: var(--oc-muted);
-  font-size: 8px;
+  font-size: 0.6667rem;
   line-height: 1.2;
   text-align: center;
   /* 24/30 buckets make a column narrower than its label; let it spill instead of clipping. */
@@ -231,7 +306,7 @@ body {
   display: flex;
   gap: 10px;
   color: var(--oc-muted);
-  font-size: 9.5px;
+  font-size: 0.7917rem;
 }
 
 .legend-item::before {
@@ -252,7 +327,7 @@ body {
 .since {
   margin: 0;
   color: var(--oc-muted);
-  font: 9.5px/1.45 var(--oc-mono);
+  font: 0.7917rem/1.45 var(--oc-mono);
 }
 
 .quotas {
@@ -360,7 +435,7 @@ body {
 
 .quo-name {
   min-width: 0;
-  font-size: 12px;
+  font-size: 1rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -373,7 +448,7 @@ body {
   border-radius: 999px;
   background: color-mix(in srgb, var(--oc-fg) 9%, transparent);
   color: var(--oc-muted);
-  font-size: 9px;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -381,7 +456,7 @@ body {
   flex: none;
   margin-inline-start: auto;
   color: var(--oc-muted);
-  font: 9.5px/1.4 var(--oc-mono);
+  font: 0.7917rem/1.4 var(--oc-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -389,7 +464,7 @@ body {
   flex: none;
   width: 8px;
   color: var(--oc-muted);
-  font-size: 9px;
+  font-size: 0.75rem;
 }
 
 .quo-body {
@@ -418,7 +493,7 @@ body {
 .q-pool-name {
   grid-column: 1 / -1;
   color: var(--oc-muted);
-  font-size: 9.5px;
+  font-size: 0.7917rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -443,7 +518,7 @@ body {
 .q-win-name {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: 0.875rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -453,7 +528,7 @@ body {
 .q-win-fig {
   flex: none;
   color: var(--oc-muted);
-  font: 9.5px/1.4 var(--oc-mono);
+  font: 0.7917rem/1.4 var(--oc-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -476,7 +551,7 @@ body {
 
 .q-line {
   color: var(--oc-muted);
-  font: 9.5px/1.45 var(--oc-mono);
+  font: 0.7917rem/1.45 var(--oc-mono);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -494,7 +569,7 @@ body {
   gap: 10px;
   padding-bottom: 3px;
   border-bottom: 1px solid color-mix(in srgb, var(--oc-fg) 7%, transparent);
-  font-size: 10.5px;
+  font-size: 0.875rem;
 }
 
 .q-bal:last-child {
@@ -510,13 +585,13 @@ body {
 
 .q-bal-value {
   flex: none;
-  font: 10px/1.45 var(--oc-mono);
+  font: 0.8333rem/1.45 var(--oc-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .q-bal[data-whole='true'] {
   display: block;
-  font-size: 15px;
+  font-size: 1.25rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -533,13 +608,13 @@ body {
 .quota-err {
   margin: 0;
   color: var(--oc-error-text);
-  font-size: 10.5px;
+  font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
 .quo-foot {
   color: var(--oc-muted);
-  font-size: 9px;
+  font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
 
@@ -564,9 +639,10 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  /* 58px at the original 12px design; rem keeps the key column in step with type. */
+  grid-template-columns: 4.8333rem minmax(0, 1fr);
   gap: 8px;
-  font-size: 10.5px;
+  font-size: 0.875rem;
 }
 
 .row-key {
@@ -574,21 +650,21 @@ body {
 }
 
 .row-value {
-  font: 10px/1.45 var(--oc-mono);
+  font: 0.8333rem/1.45 var(--oc-mono);
   overflow-wrap: anywhere;
 }
 
 .issue {
   margin: 0;
   color: var(--oc-error-text);
-  font-size: 10.5px;
+  font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
 .note {
   margin: 0;
   color: var(--oc-muted);
-  font-size: 10px;
+  font-size: 0.8333rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -596,7 +672,7 @@ body {
 .footer {
   margin: 0;
   color: var(--oc-muted);
-  font-size: 9.5px;
+  font-size: 0.7917rem;
   line-height: 1.45;
 }
 

@@ -37,6 +37,8 @@ For local development, paste the absolute path to your checkout in the same dial
 
 `package.json` declares `engines.openchamber` `>=2.5.0` and pins `@openchamber/sdk` `2.5.1`.
 
+The installed package includes about 1.05 MB of bundled woff2 fonts in `panel/fonts/`. They are declared with package-local `@font-face` URLs in `panel/styles.css`; the panel loads no remote font CSS and makes no font request off the machine.
+
 ## What the panel shows
 
 All numbers come from the local service. The footer states the scope: this is usage recorded by the local gateway for requests sent to this endpoint, not the endpoint's total usage. It does not include requests other clients send directly to the endpoint.
@@ -87,7 +89,7 @@ The `today` / `7d` / `30d` switch changes the upstream period.
 
 ### Trend
 
-The panel draws one bar per upstream `series` bucket. Each bar is split into input (including cache) and output. When there are too many buckets, labels are thinned to 6 or 5; the last bar always keeps its label.
+The panel draws one bar per upstream `series` bucket. Each bar is split into input (including cache) and output. When there are too many buckets, labels are thinned to 6 or 5; the last bar always keeps its label. Above `fontScale` 125% the labels thin further: every other day for a 7-day series, every eighth bucket for a 24- or 30-bucket series.
 
 <table>
 <tr>
@@ -195,9 +197,20 @@ An upstream failure becomes an error card with the service's error category, sta
 
 <p><sub><code>Our Free Model</code> and <code>OpenRouter</code> fail independently; the other 10 cards still render. magpie desktop has no transport-error card for this case — its nearest state is “quota unavailable”, which is a different contract — so this group is OpenChamber-only.</sub></p>
 
+### Typography
+
+The panel carries its own fonts and never requests a remote one. Six woff2 faces live in `panel/fonts/` and are declared with `@font-face` in `panel/styles.css`, each with a package-relative URL:
+
+- IBM Plex Sans 400/600 and IBM Plex Mono 400/500: unmodified, OFL-1.1, original family names.
+- Magpie Sans SC 400/600: a 3500-common-Hanzi plus CJK-punctuation subset of IBM Plex Sans SC. It is renamed because IBM Plex's OFL declares the reserved font name "Plex", which a modified version may not carry; the glyph design is unchanged.
+
+No Arabic font is bundled; the assets total about 1.05 MB. `panel/fonts/OFL.txt`, `NOTICE.md`, and `manifest.json` carry the licence text, the modification notice, and the pinned sources with byte counts and SHA-256 digests. The generator is `tools/fonts/build.py` with `tools/fonts/chars-3500.txt`; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Every type size in the panel is in rem. `fontScale` in `config.json` sets the root font-size to `14px × fontScale / 100`, so 100 renders the 14px base; the type was authored at 12px, so 100% is also 14/12 of the old sizes (about +16.7%). `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting: the host does not pass that percentage to guest frames — SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root — so the Configuration card shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber. An invalid `fontScale` falls back to 100 and produces a visible issue; the endpoint and the API key are not degraded.
+
 ### Configuration and language
 
-The Configuration card shows the config file path, the effective endpoint, whether an API key is configured, the refresh interval, configuration issues, and the backup path after a broken file was replaced.
+The Configuration card shows the config file path, the effective endpoint, whether an API key is configured, the refresh interval, the active `fontScale` percentage, configuration issues, and the backup path after a broken file was replaced.
 
 <table>
 <tr>
@@ -210,7 +223,7 @@ The Configuration card shows the config file path, the effective endpoint, wheth
 </tr>
 </table>
 
-The panel has English and Simplified Chinese copy. Set `language` to `en` or `zh-CN` in `config.json`; `auto` follows the host locale and resolves only an exact `zh-CN` match to Chinese. The next refresh re-reads `/config`, so the change applies without restarting the service or OpenChamber.
+The panel has English and Simplified Chinese copy; those are the only runtime locales. Set `language` to `en` or `zh-CN` in `config.json`; `auto` follows the host locale and resolves only an exact `zh-CN` match to Chinese. `panel/locales/ar.json` stays in the repository as a `"test": true` fixture for key, plural, and direction checks, but it is no longer imported into the runtime bundle: a host locale of `ar`, or an explicit `language: "ar"`, resolves to English with `dir=ltr` and the packaged English font. No Arabic font is shipped, so Arabic characters that appear in dynamic data — provider names, quota window names — fall back to a system font. The next refresh re-reads `/config`, so the change applies without restarting the service or OpenChamber.
 
 <img src="docs/images/config-english-openchamber.png" alt="OpenChamber Configuration card in English after setting language to en; the absolute file path is blacked out" width="860">
 
@@ -231,6 +244,7 @@ Without `XDG_CONFIG_HOME`, use `~/.config/openchamber-magpie-usage/config.json`.
   "baseUrl": "http://127.0.0.1:3425",
   "apiKey": "optional; usually required for a non-loopback endpoint",
   "refreshSeconds": 60,
+  "fontScale": 100,
   "cardOrder": ["r-magpie%2Fworkbuddy|subscription|example-user"],
   "language": "auto"
 }
@@ -241,8 +255,9 @@ Without `XDG_CONFIG_HOME`, use `~/.config/openchamber-magpie-usage/config.json`.
 | `baseUrl` | No | Absolute http(s) URL. No credentials, query string, or fragment. A non-loopback host must use https. A path prefix is allowed. |
 | `apiKey` | No | Non-empty string without whitespace or control characters. Sent only as `Authorization: Bearer`; never placed in the URL. |
 | `refreshSeconds` | No | Integer 5–3600. Default 60. |
+| `fontScale` | No | Integer 50–200. Default 100, which renders the 14px base; the root font-size is `14px × fontScale / 100` and every panel type size is in rem. A non-integer or out-of-range value falls back to 100 and sets `fontScaleInvalid`; the endpoint and the key still apply. |
 | `cardOrder` | No | String array, at most 500 entries, each 1–200 characters. Parsed leniently: a non-array value, a non-string entry, an over-long entry, or too many entries drops only the bad part; the rest of the config still applies. Order is presentation only and never degrades the endpoint. |
-| `language` | No | `auto` (default), `en`, or `zh-CN`. Case-sensitive; must equal a `code` in `panel/locales/index.json`. A non-string or empty value falls back to `auto` with a notice; the endpoint and key still apply. |
+| `language` | No | `auto` (default), `en`, or `zh-CN`. Case-sensitive; must equal a non-test `code` in `panel/locales/index.json` (entries marked `test`, such as `ar`, are not runtime languages). A non-string or empty value falls back to `auto` with a notice; the endpoint and key still apply. |
 
 Behaviour:
 
@@ -252,6 +267,7 @@ Behaviour:
 - `apiKey` may be absent or `null`; both mean "not configured". Any other non-string value is invalid.
 - `apiKey` is allowed to be an empty string? No: an empty string is not a valid key.
 - `cardOrder` keys are `encodeURIComponent(provider)|encodeURIComponent(kind)|encodeURIComponent(user)`. A second or third card with the same triple gets `#2` or `#3`. Keys the gateway no longer reports are ignored; new cards are appended in gateway order.
+- `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting; the host does not pass that percentage to guest frames. `GET /config` reports `fontScale` and `fontScaleInvalid`, and `POST /config/order` preserves `fontScale`.
 - Writes use two-space indentation and a trailing newline, preserve unknown top-level keys, keep the original file mode (0600 when it cannot be read), write a temporary file, then `rename` over the original.
 - If the file is not a valid JSON object when an order is written, the original is copied to `config.json.bak` (or `config.json.bak-<UTC timestamp>` if that exists), a file containing only `cardOrder` is written, and Configuration keeps a notice. A missing file is created, which removes the "No config file yet" note.
 
@@ -264,7 +280,7 @@ The service binds only to `127.0.0.1:<port assigned by the host>`. Every request
 | Route | Purpose |
 | --- | --- |
 | `GET /health` | The original contract `{ ok, name, apiVersion }`, unchanged. |
-| `GET /config` | Config path, effective endpoint, `apiKeyConfigured`, refresh interval, `cardOrder`, `reset` (`{ at, backupPath }` after a broken config was replaced, otherwise `null`), `language`, `languageInvalid`, and configuration issues. |
+| `GET /config` | Config path, effective endpoint, `apiKeyConfigured`, refresh interval, `fontScale`, `fontScaleInvalid`, `cardOrder`, `reset` (`{ at, backupPath }` after a broken config was replaced, otherwise `null`), `language`, `languageInvalid`, and configuration issues. |
 | `POST /config/order` | Body `{ "order": string[] }`; 200 `{ ok: true, order, reset }`. Body limit 64 KiB; 1–500 strings of 1–200 characters; anything else is 400 `bad-request`. |
 | `GET /v1/magpie/usage?period=today\|7d\|30d` | Normalised usage summary. |
 | `GET /v1/magpie/quotas?kept=1` | Prefer the upstream cached read. |
@@ -273,6 +289,7 @@ The service binds only to `127.0.0.1:<port assigned by the host>`. Every request
 Order-write details:
 
 - All writes in one process are serialised through one promise chain, so two panels cannot interleave read-modify-write.
+- The merge replaces only `cardOrder`; `fontScale`, `language`, `refreshSeconds`, and the other top-level keys are preserved.
 - Read → merge `cardOrder` → write `<path>.<pid>.<rand>.tmp` → `chmod` the temporary file to the original mode (0600 when unreadable) → `rename` over the original.
 - If the file is not a valid JSON object: back up the original (`.bak`, or `.bak-<UTC timestamp>` if it exists), write `{ "cardOrder": [...] }`, and keep `{ at, backupPath }` in memory for `/config`. A service restart clears the notice.
 - A missing file is created; `present` becomes true and the "No config file yet" note disappears.
@@ -321,35 +338,36 @@ bun test tests/quotas.test.ts
 bun run typecheck
 ```
 
-OpenChamber does not compile TypeScript. `panel/main.js` and `service/main.js` are committed build artifacts. The entry chain is `src/panel/main.ts` (`connectHost()` and mount) → `src/panel/app.ts` (`mountPanel`) → `panel/main.js`; the service entry is `src/service/main.ts` → `service/main.js`.
+OpenChamber does not compile TypeScript. `panel/main.js` and `service/main.js` are committed build artifacts. The entry chain is `src/panel/main.ts` (`connectHost()` and mount) → `src/panel/app.ts` (`mountPanel`) → `panel/main.js`; the service entry is `src/service/main.ts` → `service/main.js`. Static panel assets are not built: `panel/index.html` links `panel/styles.css`, whose six `@font-face` rules point at the woff2 files in `panel/fonts/`.
 
-Locale files are imported by `src/panel/app.ts` and inlined into `panel/main.js` at build time, because the panel cannot `fetch`. Adding a language therefore changes JSON, the imports, and the `MESSAGES` map, then requires a rebuild.
+Runtime locale files are imported by `src/panel/app.ts` and inlined into `panel/main.js` at build time, because the panel cannot `fetch`; only `en` and `zh-CN` are imported — `panel/locales/ar.json` is a `"test": true` fixture that stays out of the bundle. Adding a language therefore changes JSON, the imports, and the `MESSAGES` map, then requires a rebuild.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and `git diff --exit-code -- panel/main.js service/main.js`. A source change without a rebuilt bundle fails CI. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, screenshots, and translation rules.
 
 ### Test coverage
 
-`bun test` is fully offline: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
+`bun test` runs 233 tests, all offline: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
 
 | File | Coverage |
 | --- | --- |
-| `tests/config.test.ts` | Config validation: JSON shape, http/https rules, loopback detection, credentials and query strings, key characters, refresh range, unknown keys; lenient `cardOrder`; order-key encoding; `#2` suffixes; known/unknown/expired keys; `language` defaults, explicit values, invalid fallback without endpoint degradation. |
-| `tests/i18n.test.ts` | Registry validity, key parity, placeholder parity, CLDR plural categories (`one/other` in English, `other` in `zh-CN`), interpolation/fallback, exact `resolveLocale` matching and unsupported markers. |
+| `tests/config.test.ts` | Config validation: JSON shape, http/https rules, loopback detection, credentials and query strings, key characters, refresh range, unknown keys; lenient `cardOrder`; order-key encoding; `#2` suffixes; known/unknown/expired keys; `language` defaults, explicit values, invalid fallback without endpoint degradation; `fontScale` default, 50–200 range, and invalid fallback without endpoint degradation. |
+| `tests/i18n.test.ts` | Registry validity, key parity, placeholder parity, CLDR plural categories (`one/other` in English, `other` in `zh-CN`), interpolation/fallback, exact `resolveLocale` matching and unsupported markers; the Arabic `test` fixture is RTL but never a runtime match. |
+| `tests/fonts.test.ts` | Six local `@font-face` faces with package-relative woff2 URLs and no remote URLs; the renamed `Magpie Sans SC` family in `panel/styles.css`, with no `IBM Plex Sans SC` string; per-file and total size budgets; rem type sizes with a single 14px root font-size and the bundled body stack; `OFL.txt`, `NOTICE.md` (with the "Modified Version" wording), and `manifest.json` provenance. |
 | `tests/format.test.ts` | Number, cost, credit, percentage, and time formatting; zero hit-rate denominator; window-percentage fallback chain; money-row priority. |
 | `tests/quotas-view.test.ts` | Pool grouping and layered folding (Antigravity's three rows, nine hidden layers), duration sorting, pool-less windows sharing a row, remaining-amount rows, balance splitting, tightest remaining, icon mapping and fallback. |
-| `tests/service.test.ts` | Bearer check, `/health` contract, three `/config` paths, immediate config reload, 405/404 method/path combinations; `POST /config/order` write, unknown-key and mode preservation, creation when missing, invalid-file backup + reset + report, bad and oversized bodies, concurrent writes, 401. |
+| `tests/service.test.ts` | Bearer check, `/health` contract, three `/config` paths (including `fontScale`/`fontScaleInvalid` in the report), immediate config reload, 405/404 method/path combinations; `POST /config/order` write, unknown-key and mode preservation, creation when missing, invalid-file backup + reset + report, bad and oversized bodies, concurrent writes, 401. |
 | `tests/usage.test.ts` | Period and key forwarding, default/invalid periods, missing fields without NaN, 401/403/500/timeout/connection failure/non-JSON/schema mismatch. |
 | `tests/quotas.test.ts` | All card variants, `kept`/`refresh` forwarding, throttling, empty-cache fallback, cross-origin redirect rejection, same-origin redirect following. |
 | `tests/secret.test.ts` | The key never appears in `/config`, logs, or build artifacts; no key literal in source. |
 | `tests/panel-bundle.test.ts` | The panel is a classic IIFE, has no fetch/XHR, uses no storage, uses only `--oc-*`, mounts controls once outside `onReady`, inlines icons as data URIs, and contains the two-column grid and container query. |
-| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`. |
+| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`; Arabic fallback to English with `dir=ltr`; root font-size after repeated ready; the invalid `fontScale` notice; chart label density at 100% and 150%. |
 | `tests/health.test.ts` | The shared `/health` contract used by the panel and the service. |
 | `tests/manifest.test.ts` | Manifest paths, required build artifacts, and package metadata. |
 | `tests/harness.ts`, `tests/fixtures.ts` | Fake gateway and captured payload fixtures; support files, not test suites. |
 
 ## Verification
 
-Verified on 2026-11-01:
+Verified on 2026-11-01. This record predates the bundled fonts, `fontScale`, and the language-fallback change; the suite now has 233 passing tests, and `bun run check` remains the gate. The hashes and sizes below refer to that build:
 
 - `bun run check` passed: typecheck, 211 tests in 12 files (0 fail, 1,783 expectations), and both builds.
 - Two consecutive builds were byte-identical. SHA-256:
@@ -366,6 +384,8 @@ Verified on 2026-11-01:
 
 Not verified:
 
+- The screenshots in `docs/images/` were captured before the bundled fonts; they do not show them. They should be re-captured after 0.3.0 is installed.
+- The six woff2 files have not been loaded in an installed host. They are served through the guest file relay; if it refuses `.woff2`, `font-display: swap` falls back to system fonts without an error.
 - The Electron right-sidebar chrome and the permission-approval dialog: the screenshots use the real installed extension in OpenChamber's UI, but the host window chrome is cropped away.
 - The full `--oc-*` theme matrix: the captured panel is in the light theme; the dark host theme was not exhaustively compared.
 - Other Magpie versions' window names and `pool` fields: the folding rule only recognises `(High|Low|Medium)` and only applies inside a pool.
@@ -373,11 +393,13 @@ Not verified:
 
 ### Right-to-left layout
 
-`panel/locales/ar.json` is a fixture, not a language anyone is offered. It exists so the RTL path stays covered: the bundle is complete (key parity, the six Arabic CLDR plural categories, and the same placeholders as English), and the registry marks it `"test": true`.
+`panel/locales/ar.json` is a fixture, not a language anyone is offered: the registry marks it `"test": true`, and it is no longer imported into the runtime panel bundle. Runtime locales are `en` and `zh-CN` only. The fixture still participates in key, plural, and direction checks: key parity, the six Arabic CLDR plural categories, and the same placeholders as English.
 
-Set `"language": "ar"` in the config file and reopen the panel. `src/panel/app.ts` writes the registry entry's `dir` to `<html dir>`, so the layout mirrors; `panel/styles.css` drops the letter-spacing the Latin labels use under `[dir='rtl']`, because tracking breaks Arabic joins.
+A host locale of `ar`, or an explicit `"language": "ar"` in the config file, resolves to English with `dir=ltr` and the packaged English font; an explicit value outside the runtime registry also raises the `config.language.unsupported` notice. No Arabic font is shipped, so Arabic characters in dynamic data (provider names, quota window names) fall back to a system font. The old panel-level Arabic RTL test was replaced by fallback tests.
 
-Not covered: the Arabic copy was written for layout testing and is not native-proofread, and the fixture exercises the panel, not the host's own window chrome.
+`panel/styles.css` still drops the letter-spacing the Latin labels use under `[dir='rtl']`, because tracking breaks Arabic joins, but no runtime locale resolves to `dir="rtl"` today.
+
+Not covered: the Arabic copy was written for layout testing and is not native-proofread, and the mirrored layout is not reachable through configuration while only `en` and `zh-CN` run.
 
 ## License
 

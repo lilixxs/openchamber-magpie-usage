@@ -76,9 +76,11 @@ describe('locale registry', () => {
       expect(entry.name.trim()).not.toBe('');
       expect(['ltr', 'rtl']).toContain(entry.dir);
       expect(existsSync(join(localesDir, `${entry.code}.json`))).toBe(true);
-      // The panel bundle imports every bundle at build time; a registry entry
-      // without an import would pass the JSON checks but never render.
-      expect(panelSource.includes(`panel/locales/${entry.code}.json`)).toBe(true);
+      // Test fixtures stay out of the runtime bundle; every other registry
+      // entry must be imported, or it could pass the JSON checks but never render.
+      if (!entry.test) {
+        expect(panelSource.includes(`panel/locales/${entry.code}.json`)).toBe(true);
+      }
     }
   });
 
@@ -95,6 +97,14 @@ describe('locale registry', () => {
     expect(entry).toBeDefined();
     expect(entry?.dir).toBe('rtl');
     expect(entry?.test).toBe(true);
+  });
+
+  test('keeps the Arabic fixture out of the runtime import and bundle', () => {
+    const source = readText(join(root, 'src', 'panel', 'app.ts'));
+    expect(source).not.toContain('panel/locales/ar.json');
+    const marker = messagesFor('ar')['period.today'] ?? '';
+    expect(marker).not.toBe('');
+    expect(readText(join(root, 'panel', 'main.js')).includes(marker)).toBe(false);
   });
 
   test('loadRegistry reads index.json through the injected fetcher', async () => {
@@ -229,6 +239,12 @@ describe('resolveLocale', () => {
   test('auto falls back to English without an exact match', () => {
     expect(resolveLocale('auto', 'zh-TW', codes).locale).toBe('en');
     expect(resolveLocale('auto', 'de', codes).locale).toBe('en');
+  });
+
+  test('the test-only Arabic fixture is not a runtime match', () => {
+    const runtime = ['en', 'zh-CN'];
+    expect(resolveLocale('auto', 'ar', runtime)).toEqual({ locale: 'en', unsupported: false });
+    expect(resolveLocale('ar', 'en', runtime)).toEqual({ locale: 'en', unsupported: true });
   });
 
   test('an explicit supported language wins over the host', () => {

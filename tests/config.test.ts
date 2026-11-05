@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   DEFAULT_BASE_URL,
+  DEFAULT_FONT_SCALE,
   DEFAULT_REFRESH_SECONDS,
   MAX_CARD_ORDER,
+  MAX_FONT_SCALE,
+  MIN_FONT_SCALE,
   MAX_CARD_ORDER_KEY,
   applyCardOrder,
   cardOrderKey,
@@ -45,6 +48,29 @@ describe('config parsing', () => {
     const { config } = parseConfigText(JSON.stringify({ baseUrl: 'http://127.0.0.1:4000', extra: true }));
     expect(config.issue).toBeNull();
     expect(config.baseUrl).toBe('http://127.0.0.1:4000');
+  });
+
+  test('fontScale defaults to 100 and accepts 50..200 integers', () => {
+    expect(parseConfigText('{}').config.fontScale).toBe(DEFAULT_FONT_SCALE);
+    expect(parseConfigText('{}').config.fontScaleInvalid).toBe(false);
+    for (const value of [MIN_FONT_SCALE, 150, MAX_FONT_SCALE]) {
+      const { config } = parseConfigText(JSON.stringify({ fontScale: value }));
+      expect(config.fontScale).toBe(value);
+      expect(config.fontScaleInvalid).toBe(false);
+    }
+  });
+
+  test('an unusable fontScale falls back to 100 without degrading the endpoint', () => {
+    for (const value of [MIN_FONT_SCALE - 1, MAX_FONT_SCALE + 1, 1.5, '150', null, true]) {
+      const { config } = parseConfigText(
+        JSON.stringify({ baseUrl: 'https://magpie.example.com', apiKey: 'key', fontScale: value }),
+      );
+      expect(config.fontScale).toBe(DEFAULT_FONT_SCALE);
+      expect(config.fontScaleInvalid).toBe(true);
+      expect(config.baseUrl).toBe('https://magpie.example.com');
+      expect(config.apiKey).toBe('key');
+      expect(config.issue).toBeNull();
+    }
   });
 
   test('language defaults to auto and keeps an explicit value', () => {

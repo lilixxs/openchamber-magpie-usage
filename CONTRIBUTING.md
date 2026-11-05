@@ -29,18 +29,63 @@ bun run typecheck      # tsc --noEmit
 - `panel/main.js` is a classic IIFE. The sandboxed iframe cannot load ESM.
 - `service/main.js` is built with `--node`; it keeps ESM and Node built-ins.
 - Both bundles are committed. A source change without a rebuilt bundle is incomplete.
+- `bun run build` only produces those two JS files. `panel/index.html`, `panel/styles.css`, and `panel/fonts/*` are static package files: `index.html` links the stylesheet, and the stylesheet's six `@font-face` rules point at `./fonts/*.woff2`. They are not build outputs.
 
-The panel entry is `src/panel/main.ts` (`connectHost()` and mount). The implementation is `src/panel/app.ts` (`mountPanel`). Locale JSON files are imported by `app.ts` and inlined into `panel/main.js` at build time.
+The panel entry is `src/panel/main.ts` (`connectHost()` and mount). The implementation is `src/panel/app.ts` (`mountPanel`). Runtime locale JSON files are imported by `app.ts` and inlined into `panel/main.js` at build time.
+
+## Fonts
+
+The panel ships six woff2 faces in `panel/fonts/`, declared with package-local `@font-face` URLs in `panel/styles.css`. There is no remote font CSS and no font request off the machine, no Arabic font is bundled, and the assets total about 1.05 MB.
+
+| Files | Pinned source | Treatment |
+| --- | --- | --- |
+| `plex-sans-400.woff2`, `plex-sans-600.woff2` | `@ibm/plex-sans` 1.1.0 | Unmodified, original family name, OFL-1.1. |
+| `plex-mono-400.woff2`, `plex-mono-500.woff2` | `@ibm/plex-mono` 2.5.0 | Unmodified, original family name, OFL-1.1. |
+| `magpie-sans-sc-400.woff2`, `magpie-sans-sc-600.woff2` | `@ibm/plex-sans-sc` 1.1.0 | 3500 common Hanzi + CJK punctuation subset, renamed, OFL-1.1. |
+
+Licence rule (OFL reserved font name): IBM Plex's OFL declares the reserved font name "Plex". The Latin and mono files are unmodified and keep their original names; the Simplified Chinese subset is a modified version, so it must not carry the reserved name in any name record — it ships as **Magpie Sans SC**. The glyph design is unchanged; only the character set and name records differ. `panel/fonts/OFL.txt` is the licence text, `panel/fonts/NOTICE.md` records the modification, and `panel/fonts/manifest.json` records the pinned sources, byte counts, and SHA-256 digests. Never rename the subset back to an IBM Plex name.
+
+Regenerating:
+
+```bash
+python -m pip install fonttools brotli
+python tools/fonts/build.py
+```
+
+The generator needs Python 3.10+ and network access to jsdelivr. It downloads the pinned npm versions above, subsets the two SC faces with `tools/fonts/chars-3500.txt` (at least 3500 unique characters), rewrites the name records, fails if any renamed record still contains "plex", then rewrites `OFL.txt`, `NOTICE.md`, and `manifest.json` and enforces the per-file size budgets. Commit the regenerated `.woff2` files together with those three files. `tests/fonts.test.ts` re-checks the face count, local-only URLs, the renamed family, the budgets, and the licence files.
+
+## fontScale
+
+`config.json` accepts `fontScale`: an integer from 50 to 200, default 100. 100 renders the 14px base; the type was authored at 12px, so 100 is 14/12 of the old sizes. The root font-size becomes `14px × fontScale / 100`, and every panel type size is in rem.
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:3425",
+  "refreshSeconds": 60,
+  "fontScale": 100,
+  "language": "auto"
+}
+```
+
+It is the panel's manual equivalent of OpenChamber's interface font-size setting. The host does not pass that percentage to guest frames: SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root, which the panel then overrides with the scaled size after every `onReady`. The Configuration card therefore shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber.
+
+Contract:
+
+- An invalid value (not an integer, or outside 50–200) falls back to 100 and sets `fontScaleInvalid`. `GET /config` reports `fontScale` and `fontScaleInvalid`, the panel shows a visible issue, and the endpoint and API key are not degraded.
+- `POST /config/order` merges only `cardOrder` and preserves `fontScale`.
+- Above 125% the chart labels thin out: every other day for a 7-day series, every eighth bucket for a 24- or 30-bucket series.
+- Coverage: `tests/config.test.ts` (parse and fallback), `tests/service.test.ts` (`/config` report), `tests/panel-host.test.ts` (root font-size after repeated ready, invalid notice, label density at 100% and 150%).
 
 ## Test
 
 ```bash
 bun test
 bun test tests/quotas.test.ts
+bun test tests/fonts.test.ts
 bun run check   # typecheck -> all tests -> build
 ```
 
-Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
+Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 233 passing tests.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and:
 
@@ -59,7 +104,7 @@ OPENCHAMBER_SERVICE_PORT
 OPENCHAMBER_SERVICE_TOKEN
 ```
 
-It binds only to `127.0.0.1`, requires `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN` on every request, and never logs the token. `GET /health` returns `{ ok, name, apiVersion }`. `GET /config` reports the effective endpoint, `apiKeyConfigured` (a boolean), `cardOrder`, `language`, and `languageInvalid`.
+It binds only to `127.0.0.1`, requires `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN` on every request, and never logs the token. `GET /health` returns `{ ok, name, apiVersion }`. `GET /config` reports the effective endpoint, `apiKeyConfigured` (a boolean), `cardOrder`, `fontScale`, `fontScaleInvalid`, `language`, and `languageInvalid`.
 
 The service re-reads `config.json` on every request, so a corrected file applies without a restart. Language changes apply on the next panel refresh (default 60 seconds). Never put a token, API key, or upstream response body in a log, issue, or commit.
 
@@ -116,7 +161,7 @@ The panel reads user-visible copy from `panel/locales/`. No UI string is hard-co
 
 ### Bundling
 
-This panel is packaged for a sandboxed iframe whose bundle test forbids `fetch` and `XMLHttpRequest`. Every locale file is therefore imported at build time:
+This panel is packaged for a sandboxed iframe whose bundle test forbids `fetch` and `XMLHttpRequest`. Every runtime locale file is therefore imported at build time:
 
 ```ts
 import en from '../../panel/locales/en.json';
@@ -124,7 +169,9 @@ import localeIndex from '../../panel/locales/index.json';
 import zhCN from '../../panel/locales/zh-CN.json';
 ```
 
-Adding a language is a data change **plus imports and one map entry** in `src/panel/app.ts`, then a rebuild of `panel/main.js`. It is not a runtime drop-in like a web application. The registry is still the single list of `code`/`name`/`dir`; a new code that is not in the map cannot resolve.
+Only `en` and `zh-CN` are imported. `panel/locales/ar.json` is marked `"test": true` in the registry and is deliberately not imported: `localeCodes()` in `src/panel/app.ts` filters `test` entries out of the runtime registry, so a test fixture never enters `MESSAGES` or the bundle. The fixture still participates in key, plural, and direction checks through `tests/i18n.test.ts`.
+
+Adding a language is a data change **plus imports and one map entry** in `src/panel/app.ts`, then a rebuild of `panel/main.js`. It is not a runtime drop-in like a web application. The registry is still the single list of `code`/`name`/`dir`; a new code that is not in the map cannot resolve. A `test: true` entry is the exception: it never gets an import or a map entry.
 
 ### Keys
 
@@ -177,7 +224,7 @@ The file already holds the Magpie endpoint settings; add `language`:
 }
 ```
 
-`language` is `auto`, `en`, or `zh-CN`. It is case-sensitive and must equal a `code` in `index.json`. `auto` follows the host locale on an exact match (`zh-CN` shows Simplified Chinese); every other host locale shows English.
+`language` is `auto`, `en`, or `zh-CN`. It is case-sensitive and must equal a non-test `code` in `index.json`; entries marked `test` (such as `ar`) are not runtime languages. `auto` follows the host locale on an exact match (`zh-CN` shows Simplified Chinese); every other host locale shows English — including `ar`, which resolves to English with `dir=ltr` and the packaged English font. No Arabic font is shipped, so Arabic characters in dynamic data fall back to a system font.
 
 The service reads the file on every request and returns `language` and `languageInvalid` in `GET /config`. The panel reads `/config` on every refresh cycle (default 60 seconds), so a language change applies on the next refresh without restarting the service or the app.
 
@@ -185,7 +232,8 @@ The service reads the file on every request and returns `language` and `language
 | --- | --- |
 | `language` missing | `auto`; no notice. |
 | `language` is not a non-empty string | `auto`; `languageInvalid` is true and the panel shows a notice with the path. The endpoint and key still apply. |
-| A valid string not in `index.json` | `auto`; the panel shows `config.language.unsupported` with the path. |
+| A valid string that is not a runtime code (unknown, or a `test` fixture such as `ar`) | `auto`; the panel shows `config.language.unsupported` with the path. |
+| Host locale is `ar` (a test fixture) | `auto` resolves to English, `dir=ltr`; no notice. |
 | File missing | `auto`; the existing "No config file yet" note says the host language is used. |
 | Invalid JSON | `auto`; the existing configuration issue says the host language is used. |
 | Service unavailable | The panel stays on English; the service card shows the existing error. |
@@ -196,6 +244,7 @@ Uninstalling the extension leaves the config directory behind.
 
 - `bun run check` passes.
 - `git diff --exit-code -- panel/main.js service/main.js` exits 0.
+- Bundled fonts match `panel/fonts/manifest.json`; no remote font URL appears in `panel/styles.css`; the modified subset still carries the `Magpie Sans SC` name, never a reserved `Plex` name.
 - New UI copy is in `en.json` and `zh-CN.json` (and every other registered bundle).
 - New tests cover the changed behaviour; no skipped tests.
 - Screenshots follow the naming, pairing, cropping, redaction, and width rules.
