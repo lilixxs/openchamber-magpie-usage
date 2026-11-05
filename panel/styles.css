@@ -222,7 +222,8 @@ body {
   font-size: 8px;
   line-height: 1.2;
   text-align: center;
-  overflow: hidden;
+  /* 24/30 buckets make a column narrower than its label; let it spill instead of clipping. */
+  overflow: visible;
   white-space: nowrap;
 }
 
