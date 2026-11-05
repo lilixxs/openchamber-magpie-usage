@@ -31,34 +31,15 @@ bun run typecheck      # tsc --noEmit
 - `service/main.js` 用 `--node` 构建；保留 ESM 与 Node 内置模块。
 - 两个产物都要提交。改了源码却没有重建产物，视为未完成。
 - 构建脚本不创建输出目录。新增输出目录时，先提交其中的第一个产物，或在构建前手动建目录。
-- `bun run build` 只产出上面两个 JS 文件。`panel/index.html`、`panel/styles.css` 与 `panel/fonts/*` 是静态包文件：`index.html` 链接样式表，样式表的六条 `@font-face` 指向 `./fonts/*.woff2`。它们不是构建产物。
+- `bun run build` 只产出上面两个 JS 文件。`panel/index.html` 与 `panel/styles.css` 是静态包文件：`index.html` 链接样式表。它们不是构建产物。没有任何字体资产：样式表没有 `@font-face` 规则。
 
 面板入口是 `src/panel/main.ts`（`connectHost()` 与挂载）。面板实现是 `src/panel/app.ts`（`mountPanel`）。运行时语言包由 `app.ts` 导入，并在构建期内联进 `panel/main.js`。
 
-## 字体
-
-面板在 `panel/fonts/` 内置六个 woff2 字面，由 `panel/styles.css` 中包内相对 URL 的 `@font-face` 声明。没有远程字体 CSS，也没有离开本机的字体请求；没有内置阿拉伯字体，资源合计约 1.05 MB。
-
-| 文件 | 固定来源 | 处理方式 |
-| --- | --- | --- |
-| `plex-sans-400.woff2`、`plex-sans-600.woff2` | `@ibm/plex-sans` 1.1.0 | 未改动，保留原族名，OFL-1.1。 |
-| `plex-mono-400.woff2`、`plex-mono-500.woff2` | `@ibm/plex-mono` 2.5.0 | 未改动，保留原族名，OFL-1.1。 |
-| `magpie-sans-sc-400.woff2`、`magpie-sans-sc-600.woff2` | `@ibm/plex-sans-sc` 1.1.0 | 3500 常用汉字 + CJK 标点子集，已改名，OFL-1.1。 |
-
-许可规则（OFL 保留字体名）：IBM Plex 的 OFL 声明了保留字体名 "Plex"。拉丁与等宽文件未改动，保留原名；简体中文字体是修改版，任何 name 记录都不得再带保留名——因此以 **Magpie Sans SC** 发布。字形设计不变，只有字符集与 name 记录不同。`panel/fonts/OFL.txt` 是许可全文，`panel/fonts/NOTICE.md` 记录修改声明，`panel/fonts/manifest.json` 记录固定来源、字节数与 SHA-256 摘要。绝不要把子集改回 IBM Plex 的名字。
-
-重新生成：
-
-```bash
-python -m pip install fonttools brotli
-python tools/fonts/build.py
-```
-
-生成器需要 Python 3.10+ 以及访问 jsdelivr 的网络。它下载上面固定的 npm 版本，用 `tools/fonts/chars-3500.txt`（至少 3500 个不重复字符）对两个 SC 字面做子集化，重写 name 记录，任何改名后的记录若仍含 "plex" 就直接失败，然后重写 `OFL.txt`、`NOTICE.md` 与 `manifest.json` 并强制单文件体积预算。重新生成的 `.woff2` 要与这三个文件一起提交。`tests/fonts.test.ts` 会再次检查字面数量、仅本地 URL、改名族名、体积预算与许可文件。
-
 ## 字号（fontScale）
 
-`config.json` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
+面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。扩展不携带任何字体、`@font-face` 规则或字体许可文件；`fontScale` 只控制大小，不决定用哪款字体。
+
+`config.json` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；字号按 12px 设计稿编写，因此 100 是旧尺寸的 14/12。根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
 
 ```json
 {
@@ -83,11 +64,10 @@ python tools/fonts/build.py
 ```bash
 bun test
 bun test tests/quotas.test.ts
-bun test tests/fonts.test.ts
 bun run check   # 类型检查 -> 全部测试 -> 构建
 ```
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 233 个通过的测试。
+测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 226 个通过的测试（12 个文件）。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 
@@ -226,7 +206,7 @@ import zhCN from '../../panel/locales/zh-CN.json';
 }
 ```
 
-`language` 为 `auto`、`en` 或 `zh-CN`。大小写敏感，必须等于 `index.json` 中非 `test` 的 `code`；标了 `test` 的条目（如 `ar`）不是运行时语言。`auto` 跟随宿主 locale 的精确匹配（`zh-CN` 显示简体中文）；其他宿主 locale 都显示英文——包括 `ar`，它解析为英文、`dir=ltr`，使用包内英文字体。没有内置阿拉伯字体，动态数据里的阿拉伯字符回退到系统字体。
+`language` 为 `auto`、`en` 或 `zh-CN`。大小写敏感，必须等于 `index.json` 中非 `test` 的 `code`；标了 `test` 的条目（如 `ar`）不是运行时语言。`auto` 跟随宿主 locale 的精确匹配（`zh-CN` 显示简体中文）；其他宿主 locale 都显示英文——包括 `ar`，它解析为英文、`dir=ltr`。文字用宿主字体栈渲染，动态数据里显示什么，取决于宿主字体支持什么。
 
 服务每次请求都读文件，并在 `GET /config` 返回 `language` 与 `languageInvalid`。面板每轮刷新（默认 60 秒）读 `/config`，语言改动在下一轮刷新生效，不用重启服务或应用。
 
@@ -246,7 +226,6 @@ import zhCN from '../../panel/locales/zh-CN.json';
 
 - `bun run check` 通过。
 - `git diff --exit-code -- panel/main.js service/main.js` 退出码为 0。
-- 内置字体与 `panel/fonts/manifest.json` 一致；`panel/styles.css` 里没有远程字体 URL；修改后的子集仍用 `Magpie Sans SC` 族名，绝不带保留名 `Plex`。
 - 新增 UI 文案同时进入 `en.json` 与 `zh-CN.json`（以及其他已注册语言包）。
 - 新行为有测试覆盖，没有 skip。
 - 截图符合命名、配对、裁切、脱敏与宽度规则。

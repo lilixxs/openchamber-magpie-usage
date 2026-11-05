@@ -37,8 +37,6 @@ For local development, paste the absolute path to your checkout in the same dial
 
 `package.json` declares `engines.openchamber` `>=2.5.0` and pins `@openchamber/sdk` `2.5.1`.
 
-The installed package includes about 1.05 MB of bundled woff2 fonts in `panel/fonts/`. They are declared with package-local `@font-face` URLs in `panel/styles.css`; the panel loads no remote font CSS and makes no font request off the machine.
-
 ## What the panel shows
 
 All numbers come from the local service. The footer states the scope: this is usage recorded by the local gateway for requests sent to this endpoint, not the endpoint's total usage. It does not include requests other clients send directly to the endpoint.
@@ -199,14 +197,9 @@ An upstream failure becomes an error card with the service's error category, sta
 
 ### Typography
 
-The panel carries its own fonts and never requests a remote one. Six woff2 faces live in `panel/fonts/` and are declared with `@font-face` in `panel/styles.css`, each with a package-relative URL:
+The panel uses the host font stack: `--oc-font` and `--oc-mono` come from OpenChamber's theme, so the panel renders with whatever fonts the host renders with. The extension ships no font files, no `@font-face` rules, and no font licence text or font provenance manifest.
 
-- IBM Plex Sans 400/600 and IBM Plex Mono 400/500: unmodified, OFL-1.1, original family names.
-- Magpie Sans SC 400/600: a 3500-common-Hanzi plus CJK-punctuation subset of IBM Plex Sans SC. It is renamed because IBM Plex's OFL declares the reserved font name "Plex", which a modified version may not carry; the glyph design is unchanged.
-
-No Arabic font is bundled; the assets total about 1.05 MB. `panel/fonts/OFL.txt`, `NOTICE.md`, and `manifest.json` carry the licence text, the modification notice, and the pinned sources with byte counts and SHA-256 digests. The generator is `tools/fonts/build.py` with `tools/fonts/chars-3500.txt`; see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Every type size in the panel is in rem. `fontScale` in `config.json` sets the root font-size to `14px × fontScale / 100`, so 100 renders the 14px base; the type was authored at 12px, so 100% is also 14/12 of the old sizes (about +16.7%). `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting: the host does not pass that percentage to guest frames — SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root — so the Configuration card shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber. An invalid `fontScale` falls back to 100 and produces a visible issue; the endpoint and the API key are not degraded.
+Every type size in the panel is in rem. `fontScale` in `config.json` sets the root font-size to `14px × fontScale / 100`, so 100 renders the 14px base; the type was authored at 12px, so 100% is also 14/12 of the old sizes (about +16.7%). `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting: the host does not pass that percentage to guest frames — SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root — so the Configuration card shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber. An invalid `fontScale` falls back to 100 and produces a visible issue; the endpoint and the API key are not degraded. Chart labels are also tied to the scale: above 125% they thin out (see [Trend](#trend)).
 
 ### Configuration and language
 
@@ -223,7 +216,7 @@ The Configuration card shows the config file path, the effective endpoint, wheth
 </tr>
 </table>
 
-The panel has English and Simplified Chinese copy; those are the only runtime locales. Set `language` to `en` or `zh-CN` in `config.json`; `auto` follows the host locale and resolves only an exact `zh-CN` match to Chinese. `panel/locales/ar.json` stays in the repository as a `"test": true` fixture for key, plural, and direction checks, but it is no longer imported into the runtime bundle: a host locale of `ar`, or an explicit `language: "ar"`, resolves to English with `dir=ltr` and the packaged English font. No Arabic font is shipped, so Arabic characters that appear in dynamic data — provider names, quota window names — fall back to a system font. The next refresh re-reads `/config`, so the change applies without restarting the service or OpenChamber.
+The panel has English and Simplified Chinese copy; those are the only runtime locales. Set `language` to `en` or `zh-CN` in `config.json`; `auto` follows the host locale and resolves only an exact `zh-CN` match to Chinese. `panel/locales/ar.json` stays in the repository as a `"test": true` fixture for key, plural, and direction checks, but it is no longer imported into the runtime bundle: a host locale of `ar`, or an explicit `language: "ar"`, resolves to English with `dir=ltr`. Text renders with the host font stack (`--oc-font` / `--oc-mono`), so whatever the host font supports is what appears in dynamic data — provider names, quota window names. The next refresh re-reads `/config`, so the change applies without restarting the service or OpenChamber.
 
 <img src="docs/images/config-english-openchamber.png" alt="OpenChamber Configuration card in English after setting language to en; the absolute file path is blacked out" width="860">
 
@@ -338,7 +331,7 @@ bun test tests/quotas.test.ts
 bun run typecheck
 ```
 
-OpenChamber does not compile TypeScript. `panel/main.js` and `service/main.js` are committed build artifacts. The entry chain is `src/panel/main.ts` (`connectHost()` and mount) → `src/panel/app.ts` (`mountPanel`) → `panel/main.js`; the service entry is `src/service/main.ts` → `service/main.js`. Static panel assets are not built: `panel/index.html` links `panel/styles.css`, whose six `@font-face` rules point at the woff2 files in `panel/fonts/`.
+OpenChamber does not compile TypeScript. `panel/main.js` and `service/main.js` are committed build artifacts. The entry chain is `src/panel/main.ts` (`connectHost()` and mount) → `src/panel/app.ts` (`mountPanel`) → `panel/main.js`; the service entry is `src/service/main.ts` → `service/main.js`. Static panel assets are not built: `panel/index.html` links `panel/styles.css`. There are no font assets: the stylesheet has no `@font-face` rules and requests no fonts of its own.
 
 Runtime locale files are imported by `src/panel/app.ts` and inlined into `panel/main.js` at build time, because the panel cannot `fetch`; only `en` and `zh-CN` are imported — `panel/locales/ar.json` is a `"test": true` fixture that stays out of the bundle. Adding a language therefore changes JSON, the imports, and the `MESSAGES` map, then requires a rebuild.
 
@@ -346,13 +339,12 @@ CI runs `bun install --frozen-lockfile`, `bun run check`, and `git diff --exit-c
 
 ### Test coverage
 
-`bun test` runs 233 tests, all offline: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
+`bun test` runs 226 tests in 12 files, all offline: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
 
 | File | Coverage |
 | --- | --- |
 | `tests/config.test.ts` | Config validation: JSON shape, http/https rules, loopback detection, credentials and query strings, key characters, refresh range, unknown keys; lenient `cardOrder`; order-key encoding; `#2` suffixes; known/unknown/expired keys; `language` defaults, explicit values, invalid fallback without endpoint degradation; `fontScale` default, 50–200 range, and invalid fallback without endpoint degradation. |
 | `tests/i18n.test.ts` | Registry validity, key parity, placeholder parity, CLDR plural categories (`one/other` in English, `other` in `zh-CN`), interpolation/fallback, exact `resolveLocale` matching and unsupported markers; the Arabic `test` fixture is RTL but never a runtime match. |
-| `tests/fonts.test.ts` | Six local `@font-face` faces with package-relative woff2 URLs and no remote URLs; the renamed `Magpie Sans SC` family in `panel/styles.css`, with no `IBM Plex Sans SC` string; per-file and total size budgets; rem type sizes with a single 14px root font-size and the bundled body stack; `OFL.txt`, `NOTICE.md` (with the "Modified Version" wording), and `manifest.json` provenance. |
 | `tests/format.test.ts` | Number, cost, credit, percentage, and time formatting; zero hit-rate denominator; window-percentage fallback chain; money-row priority. |
 | `tests/quotas-view.test.ts` | Pool grouping and layered folding (Antigravity's three rows, nine hidden layers), duration sorting, pool-less windows sharing a row, remaining-amount rows, balance splitting, tightest remaining, icon mapping and fallback. |
 | `tests/service.test.ts` | Bearer check, `/health` contract, three `/config` paths (including `fontScale`/`fontScaleInvalid` in the report), immediate config reload, 405/404 method/path combinations; `POST /config/order` write, unknown-key and mode preservation, creation when missing, invalid-file backup + reset + report, bad and oversized bodies, concurrent writes, 401. |
@@ -367,7 +359,7 @@ CI runs `bun install --frozen-lockfile`, `bun run check`, and `git diff --exit-c
 
 ## Verification
 
-Verified on 2026-11-01. This record predates the bundled fonts, `fontScale`, and the language-fallback change; the suite now has 233 passing tests, and `bun run check` remains the gate. The hashes and sizes below refer to that build:
+Verified on 2026-11-01. This record predates `fontScale` and the language-fallback change; the suite now has 226 passing tests in 12 files, and `bun run check` remains the gate. The hashes and sizes below refer to that build:
 
 - `bun run check` passed: typecheck, 211 tests in 12 files (0 fail, 1,783 expectations), and both builds.
 - Two consecutive builds were byte-identical. SHA-256:
@@ -384,8 +376,7 @@ Verified on 2026-11-01. This record predates the bundled fonts, `fontScale`, and
 
 Not verified:
 
-- The screenshots in `docs/images/` were captured before the bundled fonts; they do not show them. They should be re-captured after 0.3.0 is installed.
-- The six woff2 files have not been loaded in an installed host. They are served through the guest file relay; if it refuses `.woff2`, `font-display: swap` falls back to system fonts without an error.
+- The screenshots in `docs/images/` were captured before `fontScale` (at the old 12px design size) and before 0.3.1; they should be re-captured once 0.3.1 is installed.
 - The Electron right-sidebar chrome and the permission-approval dialog: the screenshots use the real installed extension in OpenChamber's UI, but the host window chrome is cropped away.
 - The full `--oc-*` theme matrix: the captured panel is in the light theme; the dark host theme was not exhaustively compared.
 - Other Magpie versions' window names and `pool` fields: the folding rule only recognises `(High|Low|Medium)` and only applies inside a pool.
@@ -395,7 +386,7 @@ Not verified:
 
 `panel/locales/ar.json` is a fixture, not a language anyone is offered: the registry marks it `"test": true`, and it is no longer imported into the runtime panel bundle. Runtime locales are `en` and `zh-CN` only. The fixture still participates in key, plural, and direction checks: key parity, the six Arabic CLDR plural categories, and the same placeholders as English.
 
-A host locale of `ar`, or an explicit `"language": "ar"` in the config file, resolves to English with `dir=ltr` and the packaged English font; an explicit value outside the runtime registry also raises the `config.language.unsupported` notice. No Arabic font is shipped, so Arabic characters in dynamic data (provider names, quota window names) fall back to a system font. The old panel-level Arabic RTL test was replaced by fallback tests.
+A host locale of `ar`, or an explicit `"language": "ar"` in the config file, resolves to English with `dir=ltr`; an explicit value outside the runtime registry also raises the `config.language.unsupported` notice. Text renders with the host font stack (`--oc-font` / `--oc-mono`), so whatever the host font supports is what appears in dynamic data (provider names, quota window names). The old panel-level Arabic RTL test was replaced by fallback tests.
 
 `panel/styles.css` still drops the letter-spacing the Latin labels use under `[dir='rtl']`, because tracking breaks Arabic joins, but no runtime locale resolves to `dir="rtl"` today.
 

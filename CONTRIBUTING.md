@@ -29,32 +29,13 @@ bun run typecheck      # tsc --noEmit
 - `panel/main.js` is a classic IIFE. The sandboxed iframe cannot load ESM.
 - `service/main.js` is built with `--node`; it keeps ESM and Node built-ins.
 - Both bundles are committed. A source change without a rebuilt bundle is incomplete.
-- `bun run build` only produces those two JS files. `panel/index.html`, `panel/styles.css`, and `panel/fonts/*` are static package files: `index.html` links the stylesheet, and the stylesheet's six `@font-face` rules point at `./fonts/*.woff2`. They are not build outputs.
+- `bun run build` only produces those two JS files. `panel/index.html` and `panel/styles.css` are static package files: `index.html` links the stylesheet. They are not build outputs. There are no font assets: the stylesheet has no `@font-face` rules.
 
 The panel entry is `src/panel/main.ts` (`connectHost()` and mount). The implementation is `src/panel/app.ts` (`mountPanel`). Runtime locale JSON files are imported by `app.ts` and inlined into `panel/main.js` at build time.
 
-## Fonts
-
-The panel ships six woff2 faces in `panel/fonts/`, declared with package-local `@font-face` URLs in `panel/styles.css`. There is no remote font CSS and no font request off the machine, no Arabic font is bundled, and the assets total about 1.05 MB.
-
-| Files | Pinned source | Treatment |
-| --- | --- | --- |
-| `plex-sans-400.woff2`, `plex-sans-600.woff2` | `@ibm/plex-sans` 1.1.0 | Unmodified, original family name, OFL-1.1. |
-| `plex-mono-400.woff2`, `plex-mono-500.woff2` | `@ibm/plex-mono` 2.5.0 | Unmodified, original family name, OFL-1.1. |
-| `magpie-sans-sc-400.woff2`, `magpie-sans-sc-600.woff2` | `@ibm/plex-sans-sc` 1.1.0 | 3500 common Hanzi + CJK punctuation subset, renamed, OFL-1.1. |
-
-Licence rule (OFL reserved font name): IBM Plex's OFL declares the reserved font name "Plex". The Latin and mono files are unmodified and keep their original names; the Simplified Chinese subset is a modified version, so it must not carry the reserved name in any name record — it ships as **Magpie Sans SC**. The glyph design is unchanged; only the character set and name records differ. `panel/fonts/OFL.txt` is the licence text, `panel/fonts/NOTICE.md` records the modification, and `panel/fonts/manifest.json` records the pinned sources, byte counts, and SHA-256 digests. Never rename the subset back to an IBM Plex name.
-
-Regenerating:
-
-```bash
-python -m pip install fonttools brotli
-python tools/fonts/build.py
-```
-
-The generator needs Python 3.10+ and network access to jsdelivr. It downloads the pinned npm versions above, subsets the two SC faces with `tools/fonts/chars-3500.txt` (at least 3500 unique characters), rewrites the name records, fails if any renamed record still contains "plex", then rewrites `OFL.txt`, `NOTICE.md`, and `manifest.json` and enforces the per-file size budgets. Commit the regenerated `.woff2` files together with those three files. `tests/fonts.test.ts` re-checks the face count, local-only URLs, the renamed family, the budgets, and the licence files.
-
 ## fontScale
+
+The panel uses the host font stack: `--oc-font` and `--oc-mono` come from OpenChamber's theme. The extension ships no fonts, no `@font-face` rules, and no font licence files; `fontScale` controls only the size, never which font is used.
 
 `config.json` accepts `fontScale`: an integer from 50 to 200, default 100. 100 renders the 14px base; the type was authored at 12px, so 100 is 14/12 of the old sizes. The root font-size becomes `14px × fontScale / 100`, and every panel type size is in rem.
 
@@ -81,11 +62,10 @@ Contract:
 ```bash
 bun test
 bun test tests/quotas.test.ts
-bun test tests/fonts.test.ts
 bun run check   # typecheck -> all tests -> build
 ```
 
-Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 233 passing tests.
+Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 226 passing tests in 12 files.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and:
 
@@ -224,7 +204,7 @@ The file already holds the Magpie endpoint settings; add `language`:
 }
 ```
 
-`language` is `auto`, `en`, or `zh-CN`. It is case-sensitive and must equal a non-test `code` in `index.json`; entries marked `test` (such as `ar`) are not runtime languages. `auto` follows the host locale on an exact match (`zh-CN` shows Simplified Chinese); every other host locale shows English — including `ar`, which resolves to English with `dir=ltr` and the packaged English font. No Arabic font is shipped, so Arabic characters in dynamic data fall back to a system font.
+`language` is `auto`, `en`, or `zh-CN`. It is case-sensitive and must equal a non-test `code` in `index.json`; entries marked `test` (such as `ar`) are not runtime languages. `auto` follows the host locale on an exact match (`zh-CN` shows Simplified Chinese); every other host locale shows English — including `ar`, which resolves to English with `dir=ltr`. Text renders with the host font stack, so whatever the host font supports is what appears in dynamic data.
 
 The service reads the file on every request and returns `language` and `languageInvalid` in `GET /config`. The panel reads `/config` on every refresh cycle (default 60 seconds), so a language change applies on the next refresh without restarting the service or the app.
 
@@ -244,7 +224,6 @@ Uninstalling the extension leaves the config directory behind.
 
 - `bun run check` passes.
 - `git diff --exit-code -- panel/main.js service/main.js` exits 0.
-- Bundled fonts match `panel/fonts/manifest.json`; no remote font URL appears in `panel/styles.css`; the modified subset still carries the `Magpie Sans SC` name, never a reserved `Plex` name.
 - New UI copy is in `en.json` and `zh-CN.json` (and every other registered bundle).
 - New tests cover the changed behaviour; no skipped tests.
 - Screenshots follow the naming, pairing, cropping, redaction, and width rules.
