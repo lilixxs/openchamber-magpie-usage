@@ -2,13 +2,14 @@
 
 ## Scope
 
-This is an OpenChamber guest extension: a sandboxed panel plus a local Node service. Changes must keep the panel and the service contract in sync. The panel may only use `host.*`; it cannot `fetch`, use XHR, touch browser storage, or dial the service directly.
+This is an OpenChamber guest extension: a sandboxed panel plus a local Node service. Changes must keep the panel and the service contract in sync. The panel may only use `host.*`; it cannot `fetch`, use XHR, touch `localStorage`, `sessionStorage`, IndexedDB, or cookies, or dial the service directly. Its single storage use is the instance-scoped first-open marker through `host.storage` (see [Config file](#config-file)).
 
 ## Local environment
 
 - Bun 1.4 or newer.
 - OpenChamber 2.5.0 or newer (the manifest declares `engines.openchamber >= 2.5.0`).
 - A checkout of this repository.
+- Bun is needed only to build the committed bundles: OpenChamber does not compile TypeScript and installs only the checked-in `panel/main.js` and `service/main.js`.
 - No dev server, watcher, or release script exists.
 
 ```bash
@@ -37,7 +38,7 @@ The panel entry is `src/panel/main.ts` (`connectHost()` and mount). The implemen
 
 The panel uses the host font stack: `--oc-font` and `--oc-mono` come from OpenChamber's theme. The extension ships no fonts, no `@font-face` rules, and no font licence files; `fontScale` controls only the size, never which font is used.
 
-`config.json` accepts `fontScale`: an integer from 50 to 200, default 100. 100 renders the 14px base; the type was authored at 12px, so 100 is 14/12 of the old sizes. The root font-size becomes `14px × fontScale / 100`, and every panel type size is in rem.
+`config.jsonc` accepts `fontScale`: an integer from 50 to 200, default 100. 100 renders the 14px base; the type was authored at 12px, so 100 is 14/12 of the old sizes. The root font-size becomes `14px × fontScale / 100`, and every panel type size is in rem.
 
 ```json
 {
@@ -57,6 +58,33 @@ Contract:
 - Chart labels are independent of `fontScale`: seven `MM-DD` labels for the 30-day period, six `HH` labels for the 24-hour period.
 - Coverage: `tests/config.test.ts` (parse and fallback), `tests/service.test.ts` (`/config` report), `tests/panel-host.test.ts` (root font-size after repeated ready, invalid notice, chart labels: text, fixed counts, independence from `fontScale`).
 
+## Config file
+
+The only configuration file is `$XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc`, or `~/.config/openchamber-magpie-usage/config.jsonc` when `XDG_CONFIG_HOME` is absent. Windows uses the same `~/.config` layout, for example `%USERPROFILE%\.config\openchamber-magpie-usage\config.jsonc`. The old `config.json` is never read, copied, renamed, or migrated; when both exist only `config.jsonc` is used. Moving from the old name is a manual job: see [docs/config-migration.md](docs/config-migration.md).
+
+The file is JSONC:
+
+- `//` line comments and `/* */` block comments are allowed; `//` and `/*` inside a string are not comments.
+- Trailing commas are rejected. Duplicate top-level keys are rejected (duplicates nested deeper are allowed). Every syntax error is collected; the tolerant parser's partial value is never trusted without checking `errors`.
+- Unknown top-level keys are ignored by the parser and byte-preserved by a `cardOrder` edit.
+- Strict JSON is valid where it stands and is not reformatted. A save replaces only the root `cardOrder` value, edited with `jsonc-parser`; comments inside that array may be dropped, which the generated template states.
+
+Creation and storage:
+
+- First open: when the file is genuinely missing and the instance-scoped host-storage marker `openchamber-magpie-usage:v1:config-initialized` is absent, the panel posts `POST /config/create` once and gets the full bilingual template. If the marker already exists and the file is later deleted, the panel does not recreate it; the Configuration card shows the create button instead.
+- That marker is the only thing the panel stores. There is no `localStorage`, `sessionStorage`, IndexedDB, or cookie, and the marker never holds the config, the path, the key, the order, or a fold state. If the marker cannot be read or written, the panel neither auto-creates nor treats the state as a first install; the manual button stays available.
+- Reordering cards while the file is missing is the explicit exception: it creates the template with the current order.
+
+Writes and recovery:
+
+- All writes in one service process run on one promise chain. The file keeps its original mode (0600 when it cannot be read); a file the service creates gets 0600 where the platform supports it.
+- Only the root `cardOrder` range is edited. Other fields, unknown keys, comments outside the array, indentation, and CRLF/LF endings survive byte for byte.
+- Creation is exclusive (a hard link, falling back to an exclusive `wx` open), so a file that appears meanwhile is never overwritten. An order save re-reads the file just before publishing and fails with 409 `config-conflict` when the text changed; a race with another process cannot be excluded absolutely.
+- A structurally damaged document (syntax error, duplicate top-level key, non-object root) is rebuilt only when an order is saved: the full template plus the submitted order, then the previous text appended line by line as `//` comments under a bilingual marker. No `.bak` file is created and old backups are not deleted. Field-value errors do not rebuild — only `cardOrder` changes. Unreadable, permission-denied, and non-regular paths are never overwritten or reported as success.
+- The service keeps `{ at, restored, defaulted, previousText: 'appended-comments' }` in memory until it restarts; the report never contains the old text or anything derived from the key.
+
+Coverage: `tests/config-document.test.ts` (inspection, recovery, local edit), `tests/service.test.ts` (`POST /config/create`, `POST /config/order`, the `/config` report), `tests/panel-host.test.ts` (card shell and creation flow).
+
 ## Test
 
 ```bash
@@ -65,13 +93,60 @@ bun test tests/quotas.test.ts
 bun run check   # typecheck -> all tests -> build
 ```
 
-Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 225 passing tests in 12 files.
+Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 269 passing tests in 13 files.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and:
 
 ```bash
 git diff --exit-code -- panel/main.js service/main.js
 ```
+
+### Test coverage
+
+| File | Coverage |
+| --- | --- |
+| `tests/config.test.ts` | Config validation through `parseConfigText`: document-level failures (broken JSON, non-object root), http/https rules, loopback detection, credentials and query strings, key characters, refresh range, unknown keys; lenient `cardOrder`; order-key encoding; `#2` suffixes; known/unknown/expired keys; `language` defaults, explicit values, invalid fallback without endpoint degradation; `fontScale` default, 50–200 range, and invalid fallback without endpoint degradation. |
+| `tests/config-document.test.ts` | Strict JSONC inspection: line and block comments, `//` and `/*` inside strings, trailing commas, truncated strings, empty content, duplicate top-level keys (nested duplicates allowed), non-object roots; lenient field issues that keep the endpoint while a fatal one falls back wholesale; conservative recovery of the endpoint/key pair, duplicated fields, unproven values, and the `auto`/`en`/`zh-CN` language whitelist; the local `cardOrder` edit preserving comments, unknown keys, indentation, and CRLF; the generated template is itself valid JSONC with six active keys. |
+| `tests/i18n.test.ts` | Registry validity, key parity, placeholder parity, CLDR plural categories (`one/other` in English, `other` in `zh-CN`), interpolation/fallback, exact `resolveLocale` matching and unsupported markers; the Arabic `test` fixture is RTL but never a runtime match. |
+| `tests/format.test.ts` | Number, cost, credit, percentage, and time formatting; zero hit-rate denominator; window-percentage fallback chain; money-row priority. |
+| `tests/quotas-view.test.ts` | Pool grouping and layered folding (Antigravity's three rows, nine hidden layers), duration sorting, pool-less windows sharing a row, remaining-amount rows, balance splitting, tightest remaining, icon mapping and fallback. |
+| `tests/service.test.ts` | Bearer check, `/health` contract, `/config` report (path, endpoint, `apiKeyConfigured` without the key, `fontScale`/`fontScaleInvalid`, `validity`, `recovery`, and the old `config.json` being ignored), immediate config reload, 405/404 method/path combinations; `POST /config/create` (bilingual six-field template, empty body, explicit order, an existing file left untouched, bad bodies, a non-regular path refused); `POST /config/order` (only `cardOrder` edited, unknown keys and mode preserved, creation when missing, in-place rebuild with no `.bak`, a field error that does not rebuild, bad and oversized bodies, concurrent writes, 401). |
+| `tests/usage.test.ts` | Period and key forwarding, default/invalid periods, missing fields without NaN, 401/403/500/timeout/connection failure/non-JSON/schema mismatch. |
+| `tests/quotas.test.ts` | All card variants, `kept`/`refresh` forwarding, throttling, empty-cache fallback, cross-origin redirect rejection, same-origin redirect following. |
+| `tests/secret.test.ts` | The key never appears in `/config`, logs, or build artifacts; no key literal in source. |
+| `tests/panel-bundle.test.ts` | The panel is a classic IIFE, has no fetch/XHR, uses no `localStorage`/`sessionStorage`/IndexedDB/cookie and only host instance storage for the first-open marker (never the config, path, key, order, or fold state), uses only `--oc-*`, mounts controls once outside `onReady`, inlines icons as data URIs, and contains the two-column grid and container query. |
+| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`; Arabic fallback to English with `dir=ltr`; root font-size after repeated ready; the invalid `fontScale` notice; chart labels: the `MM-DD` and `HH` text, fixed counts, and independence from `fontScale`; the Configuration card shell (last before the footer, collapsed by default, header status from file validity only, remount resets it, path copy button with success and failure feedback, recovery details in the body); configuration creation (first open creates once then remembers, an existing file is never overwritten, a storage failure neither auto-creates nor blocks the manual button, the confirm/cancel flow posts only intent and order, a failed create stays retryable, a marker write failure never rolls back the file). |
+| `tests/health.test.ts` | The shared `/health` contract used by the panel and the service. |
+| `tests/manifest.test.ts` | Manifest paths, required build artifacts, and package metadata. |
+| `tests/harness.ts`, `tests/fixtures.ts` | Fake gateway and captured payload fixtures; support files, not test suites. |
+
+## Verification
+
+The record behind the README's behaviour and screenshot claims. Verified on 2026-11-01; it predates `fontScale`, the language-fallback change, and the switch to `config.jsonc`. The suite now has 269 passing tests in 13 files, and `bun run check` remains the gate. The hashes and sizes below belong to that 2026-11-01 build and no longer describe the current bundles, which were rebuilt later for the JSONC change:
+
+- `bun run check` passed: typecheck, 211 tests in 12 files (0 fail, 1,783 expectations), and both builds.
+- Two consecutive builds were byte-identical. SHA-256:
+  - `panel/main.js`: `EC65B475AE7FAFBD90C639B64EBB2FBCD22C7EA1B9CD1C6DFAF2FD9EEFB4DA81` (110,454 bytes)
+  - `service/main.js`: `A0535553EF5DE80055BC668721EB1AE9A8C47697E3B403CCFCABF6E8E50C6E95` (28,078 bytes)
+- `git diff --exit-code -- panel/main.js service/main.js` exited 0 after the check.
+- Screenshots: 24 images across all 8 groups, in `docs/images/`. OpenChamber and magpie desktop are side by side for usage (today/7d/30d), the 7-day trend, quota cards, balance cards, and configuration/language. Account e-mails, the API-key fragment, and the absolute config path were removed with solid fills or excluded from the crop.
+- Real gateway: 12 cards rendered with no script errors. Antigravity folded into three pool rows (Claude & GPT, Gemini, Gemini 4 Argon) with all nine `(High)/(Low)/(Medium)` layers hidden; windows sorted 5 hours → 7 days.
+- The custom OpenAI-compatible endpoint's balance string split into 14 label/value rows; the single-segment `¥21.08` stayed whole; `unlimited`, the four balance cards, and the two error cards rendered correctly; no money row showed `NaN`.
+- Container query: at about 340px card width, `grid-template-columns` was `154px 154px`; at 240px it became a single `220px` column.
+- Dragging the first card to third position wrote `cardOrder` while preserving `baseUrl`; reopening the panel kept the order. Keyboard `End` moved a card and `aria-live` announced "moved to position 12 of 12".
+- Writing invalid JSON into `config.json` and then dragging a card copied the original byte-for-byte to `config.json.bak` and rewrote a valid file containing only `cardOrder` (two-space indent, trailing newline). Configuration reported `config.json was invalid; saved as … and reset`. This bullet records the pre-JSONC behaviour: the current code rebuilds `config.jsonc` in place with the old text appended as `//` comments and creates no `.bak`, and that path has only automated coverage.
+- A forced write failure (config path occupied by a directory) kept the new order, showed `order not saved` next to Quotas, and included the service's reason.
+
+Not verified:
+
+- Most screenshots in `docs/images/` were captured before `fontScale` (at the old 12px design size) and before 0.3.1. The Command Code quota pair, the ordering pair, and the collapsed list were re-captured on 0.4.0; the remaining groups still need re-capturing.
+- The Electron right-sidebar chrome and the permission-approval dialog: the screenshots use the real installed extension in OpenChamber's UI, but the host window chrome is cropped away.
+- The full `--oc-*` theme matrix: the captured panel is in the light theme; the dark host theme was not exhaustively compared.
+- Other Magpie versions' window names and `pool` fields: the folding rule only recognises `(High|Low|Medium)` and only applies inside a pool.
+- The semantics of upstream `kept=1` on other Magpie versions; on this machine it returns an empty list.
+- No real-host install of the current build: the JSONC file, the collapsed Configuration card, the first-open auto-create, the copy-path button, the 409 `config-conflict` path, and the in-place rebuild were exercised only by automated tests (`tests/config-document.test.ts`, `tests/service.test.ts`, `tests/panel-host.test.ts`) with a fake host, happy-dom, and real local HTTP. No right-sidebar pixel check was made for the current build.
+- The screenshots in `docs/images/` also predate `config.jsonc` and the collapsed Configuration card.
+- Cross-process write races: writes are serialised inside one service process and the file is re-read just before publishing, but a write from another process between that read and the `rename` cannot be excluded by the suite.
 
 ## Debugging
 
@@ -84,9 +159,9 @@ OPENCHAMBER_SERVICE_PORT
 OPENCHAMBER_SERVICE_TOKEN
 ```
 
-It binds only to `127.0.0.1`, requires `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN` on every request, and never logs the token. `GET /health` returns `{ ok, name, apiVersion }`. `GET /config` reports the effective endpoint, `apiKeyConfigured` (a boolean), `cardOrder`, `fontScale`, `fontScaleInvalid`, `language`, and `languageInvalid`.
+It binds only to `127.0.0.1`, requires `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN` on every request, and never logs the token. `GET /health` returns `{ ok, name, apiVersion }`. `GET /config` reports `configPath`, the effective endpoint, `apiKeyConfigured` (a boolean, never the key), `refreshSeconds`, `fontScale`, `fontScaleInvalid`, `cardOrder`, `cardOrderInvalid`, `language`, `languageInvalid`, `recovery`, `source`, `present`, `validity` (`missing` / `valid` / `invalid` / `unreadable`), `issue`, and `issues`. The write routes are `POST /config/create` and `POST /config/order`; any other method/path pair is 405 or 404.
 
-The service re-reads `config.json` on every request, so a corrected file applies without a restart. Language changes apply on the next panel refresh (default 60 seconds). Never put a token, API key, or upstream response body in a log, issue, or commit.
+The service re-reads `config.jsonc` on every request, so a corrected file applies without a restart. Language changes apply on the next panel refresh (default 60 seconds). Never put a token, API key, or upstream response body in a log, issue, or commit.
 
 ## Install, version, CI
 
@@ -121,7 +196,7 @@ Screenshots live in `docs/images/` and are referenced by relative path from both
 - Every image needs descriptive alt text naming the app, screen, period, and state.
 - Check every image at 100% after redaction; a single visible character from a secret is a failure.
 
-The README uses 24 images across 8 groups: install, usage (today/7d/30d), trend, quota cards (pooling and collapsed), balance cards (DeepSeek and a custom OpenAI-compatible endpoint), error cards, ordering, and configuration/language.
+The README uses 24 images across 8 groups: install, usage (today/7d/30d), trend, quota cards (plan and balance, plus the collapsed list), balance cards (DeepSeek and a custom OpenAI-compatible endpoint), error cards, ordering, and configuration/language.
 
 ## Translations
 
@@ -191,8 +266,8 @@ Tests enforce key parity, plural coverage, placeholder parity, and a valid regis
 
 There is no language control in the panel. The setting lives outside the installed package, because the host replaces a Git-installed package directory on update:
 
-- `$XDG_CONFIG_HOME/openchamber-magpie-usage/config.json`, or
-- `~/.config/openchamber-magpie-usage/config.json` when `XDG_CONFIG_HOME` is absent. Windows uses the same `~/.config` layout, for example `%USERPROFILE%\.config\openchamber-magpie-usage\config.json`.
+- `$XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc`, or
+- `~/.config/openchamber-magpie-usage/config.jsonc` when `XDG_CONFIG_HOME` is absent. Windows uses the same `~/.config` layout, for example `%USERPROFILE%\.config\openchamber-magpie-usage\config.jsonc`.
 
 The file already holds the Magpie endpoint settings; add `language`:
 
@@ -214,11 +289,17 @@ The service reads the file on every request and returns `language` and `language
 | `language` is not a non-empty string | `auto`; `languageInvalid` is true and the panel shows a notice with the path. The endpoint and key still apply. |
 | A valid string that is not a runtime code (unknown, or a `test` fixture such as `ar`) | `auto`; the panel shows `config.language.unsupported` with the path. |
 | Host locale is `ar` (a test fixture) | `auto` resolves to English, `dir=ltr`; no notice. |
-| File missing | `auto`; the existing "No config file yet" note says the host language is used. |
-| Invalid JSON | `auto`; the existing configuration issue says the host language is used. |
+| File missing | `auto`; the "No config file yet" note says the host language is used, and the card offers **Create config file**. |
+| Invalid JSONC document (syntax error, duplicate top-level key, non-object root) | `auto`; the existing configuration issue says the host language is used. |
 | Service unavailable | The panel stays on English; the service card shows the existing error. |
 
 Uninstalling the extension leaves the config directory behind.
+
+### Right-to-left layout
+
+The `ar` fixture still drives direction checks in `tests/i18n.test.ts`: key parity, the six Arabic CLDR plural categories, and the same placeholders as English. `panel/styles.css` drops the letter-spacing the Latin labels use under `[dir='rtl']`, because tracking breaks Arabic joins, but no runtime locale resolves to `dir="rtl"` today.
+
+Not covered: the Arabic copy was written for layout testing and is not native-proofread, and the mirrored layout is not reachable through configuration while only `en` and `zh-CN` run. The old panel-level Arabic RTL test was replaced by fallback tests.
 
 ## Commit checklist
 

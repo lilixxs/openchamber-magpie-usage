@@ -4,13 +4,14 @@
 
 ## 范围
 
-本仓库是 OpenChamber guest 扩展：一个沙箱面板加一个本地 Node 服务。改动必须保持面板与服务契约同步。面板只能使用 `host.*`；不能 `fetch`、不能用 XHR、不能读写浏览器存储，也不能直连本地服务。
+本仓库是 OpenChamber guest 扩展：一个沙箱面板加一个本地 Node 服务。改动必须保持面板与服务契约同步。面板只能使用 `host.*`；不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直连本地服务。它唯一用到的存储是经 `host.storage` 写入的实例作用域首开标记（见[配置文件](#配置文件)）。
 
 ## 本地环境
 
 - Bun 1.4 或更高版本。
 - OpenChamber 2.5.0 或更高版本。
 - 本仓库的检出。没有开发服务器、监听模式或发布脚本。
+- Bun 只用于构建已提交的产物：OpenChamber 不编译 TypeScript，安装时只读取磁盘上的 `panel/main.js` 与 `service/main.js`。
 
 ```bash
 bun install
@@ -39,7 +40,7 @@ bun run typecheck      # tsc --noEmit
 
 面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。扩展不携带任何字体、`@font-face` 规则或字体许可文件；`fontScale` 只控制大小，不决定用哪款字体。
 
-`config.json` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；字号按 12px 设计稿编写，因此 100 是旧尺寸的 14/12。根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
+`config.jsonc` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；字号按 12px 设计稿编写，因此 100 是旧尺寸的 14/12。根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
 
 ```json
 {
@@ -59,6 +60,33 @@ bun run typecheck      # tsc --noEmit
 - 图表标签与 `fontScale` 无关：30 天 7 个 `MM-DD` 标签，24 小时 6 个 `HH` 标签。
 - 覆盖：`tests/config.test.ts`（解析与回退）、`tests/service.test.ts`（`/config` 回报）、`tests/panel-host.test.ts`（重复 ready 后的根字号、无效提示、图表标签的文本、固定数量与 `fontScale` 无关）。
 
+## 配置文件
+
+唯一的配置文件是 `$XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc`；没有 `XDG_CONFIG_HOME` 时是 `~/.config/openchamber-magpie-usage/config.jsonc`。Windows 使用同一 `~/.config` 布局，例如 `%USERPROFILE%\.config\openchamber-magpie-usage\config.jsonc`。旧的 `config.json` 从不被读取、复制、改名或迁移；两者同时存在时只用 `config.jsonc`。从旧文件名迁移必须手动完成，见 [docs/config-migration.md](docs/config-migration.md)。
+
+文件是 JSONC：
+
+- 允许 `//` 行注释与 `/* */` 块注释；字符串里的 `//` 与 `/*` 不算注释。
+- 拒绝尾随逗号。拒绝重复的顶层键（更深层的重复允许）。所有语法错误都会被收集；不检查 `errors` 就绝不信任容错解析器给出的半截值。
+- 未知顶层键解析时被忽略，在 `cardOrder` 编辑时逐字节保留。
+- 严格 JSON 原样有效，不会被重排格式。保存只替换根级 `cardOrder` 的值，用 `jsonc-parser` 编辑；该数组内部的注释可能丢失，生成的模板对此有说明。
+
+创建与存储：
+
+- 首次打开：文件确实缺失且实例作用域的宿主存储标记 `openchamber-magpie-usage:v1:config-initialized` 不存在时，面板调用一次 `POST /config/create`，拿到完整的双语模板。标记已存在而文件后来被删除时，面板不会重建，配置卡改为显示创建按钮。
+- 那个标记是面板唯一存储的东西。没有 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，标记里也绝不放配置、路径、密钥、顺序或折叠状态。标记读写失败时，面板既不自动创建，也不当作首次安装；手动按钮照常可用。
+- 文件缺失时重排卡片是明确的例外：它会按当前顺序创建模板。
+
+写入与恢复：
+
+- 同一服务进程内的所有写入跑在同一条 promise 链上。文件保留原权限（读不到时 0600）；服务新建的文件在平台支持时为 0600。
+- 只编辑根级 `cardOrder` 的范围。其他字段、未知键、数组之外的注释、缩进与 CRLF/LF 换行逐字节保留。
+- 新建是排他的（硬链接，失败时回退到排他 `wx` 打开），期间出现的文件绝不会被覆盖。保存顺序在发布前重读文件，内容已变就返回 409 `config-conflict`；与其他进程的竞态无法被绝对排除。
+- 结构损坏的文档（语法错误、重复顶层键、根不是对象）只在保存顺序时重建：完整模板 + 提交的顺序，再把旧原文逐行追加为带双语标记的 `//` 注释。不生成 `.bak`，也不删除旧备份。字段值错误不重建——只改 `cardOrder`。读不到、权限不足或非普通文件的路径绝不被覆盖，也绝不报成功。
+- 服务把 `{ at, restored, defaulted, previousText: 'appended-comments' }` 记在内存里直到重启；回报中绝不含旧原文，也绝不含任何由密钥推导出的内容。
+
+覆盖：`tests/config-document.test.ts`（检查、恢复、就地编辑）、`tests/service.test.ts`（`POST /config/create`、`POST /config/order`、`/config` 回报）、`tests/panel-host.test.ts`（卡片外壳与创建流程）。
+
 ## 测试
 
 ```bash
@@ -67,7 +95,7 @@ bun test tests/quotas.test.ts
 bun run check   # 类型检查 -> 全部测试 -> 构建
 ```
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 225 个通过的测试（12 个文件）。
+测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 269 个通过的测试（13 个文件）。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 
@@ -75,19 +103,66 @@ bun run check   # 类型检查 -> 全部测试 -> 构建
 git diff --exit-code -- panel/main.js service/main.js
 ```
 
+### 测试覆盖
+
+| 文件 | 内容 |
+| --- | --- |
+| `tests/config.test.ts` | 经 `parseConfigText` 的配置校验：文档级失败（JSON 损坏、根不是对象）、http/https 规则、环回判定、凭据与查询串、密钥字符、刷新区间、未知键；`cardOrder` 宽松解析、顺序键编码、`#2` 后缀、已知/未知/过期键的排序；`language` 默认值、显式值、坏值回退且不降级端点；`fontScale` 默认值、50–200 区间与坏值回退且不降级端点。 |
+| `tests/config-document.test.ts` | 严格 JSONC 检查：行/块注释、字符串内的 `//` 与 `/*`、尾随逗号、截断的字符串、空内容、重复顶层键（允许嵌套重复）、根不是对象；宽松字段错误保留端点而致命错误整体回退；端点/密钥成组的保守恢复、重复字段、无法证明的值、`auto`/`en`/`zh-CN` 语言白名单；只改 `cardOrder` 且保留注释、未知键、缩进与 CRLF；生成的模板本身是合法 JSONC 且只有六个生效键。 |
+| `tests/i18n.test.ts` | 注册表合法性、键齐全、占位符一致、CLDR 复数类别（en 的 `one/other`、zh-CN 的 `other`）、插值/回退、`resolveLocale` 的精确匹配与 unsupported 标记；阿拉伯语 `test` 夹具是 RTL 但绝不是运行时匹配。 |
+| `tests/format.test.ts` | 数字/成本/积分/百分比/时间格式化，命中率分母为 0，窗口百分比回退链，金额行优先级。 |
+| `tests/quotas-view.test.ts` | pool 分组与分层折叠（Antigravity 3 行、9 个分层隐藏）、时长排序、无 pool 窗口共用一行、剩余口径金额行、余额拆分、最紧剩余、图标映射与兜底。 |
+| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`validity`、`recovery`，以及旧 `config.json` 被忽略）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语六字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、缺失时新建、原地重建且无 `.bak`、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。 |
+| `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符。 |
+| `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
+| `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
+| `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、不用 `localStorage`/`sessionStorage`/IndexedDB/cookie 且只用宿主实例存储保存首开标记（绝不存配置、路径、密钥、顺序或折叠状态）、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
+| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）。 |
+| `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
+| `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
+| `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |
+
+## 验证
+
+本记录支撑 README 的行为与截图说明。2026-11-01 验证；该记录早于 `fontScale`、语言回退改动与 `config.jsonc` 切换。套件当前有 269 个通过的测试（13 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次 2026-11-01 的构建，已不能描述当前产物——产物后来为 JSONC 改动重建过：
+
+- `bun run check` 全绿：类型检查、12 个文件共 211 个测试（0 失败、1,783 次断言）、两次构建。
+- 连续两次构建字节一致。SHA-256：
+  - `panel/main.js`：`EC65B475AE7FAFBD90C639B64EBB2FBCD22C7EA1B9CD1C6DFAF2FD9EEFB4DA81`（110,454 字节）
+  - `service/main.js`：`A0535553EF5DE80055BC668721EB1AE9A8C47697E3B403CCFCABF6E8E50C6E95`（28,078 字节）
+- 检查后运行 `git diff --exit-code -- panel/main.js service/main.js`，退出码 0。
+- 截图：`docs/images/` 共 24 张，覆盖全部 8 个功能组。用量（今天/7 天/30 天）、7 天趋势、额度卡、余额卡、配置/语言均与 magpie 桌面端并排。账户邮箱、API key 片段、绝对配置路径已用实心色块覆盖或裁出画面。
+- 真实网关：12 张卡全部渲染，无脚本错误。Antigravity 折成 3 个 pool 行（Claude & GPT、Gemini、Gemini 4 Argon），9 个 `(High)/(Low)/(Medium)` 分层全部隐藏；窗口按 5 小时 → 7 天排序。
+- 自定义 OpenAI 兼容端点的余额串拆成 14 行标签/数值；单段余额 `¥21.08` 整体显示；`unlimited`、4 张余额卡与 2 张错误卡行为正确；所有金额行无 `NaN`。
+- 容器查询：卡宽约 340px 时 `grid-template-columns` 为 `154px 154px`；240px 时降为单列 `220px`。
+- 拖拽第一张卡到第三位：`config.json` 写入 `cardOrder`，`baseUrl` 原样保留，重新打开面板顺序不变；键盘 `End` 移动生效，`aria-live` 播报「moved to position 12 of 12」。
+- 手工把 `config.json` 写成非法 JSON 后再拖一张卡：原文逐字复制到 `config.json.bak`，文件被重写为只含 `cardOrder` 的合法 JSON（2 空格缩进、结尾换行），配置卡显示 `config.json was invalid; saved as … and reset`。这一条记录的是 JSONC 之前的行为：当前代码会在原地重建 `config.jsonc`，把旧原文以 `//` 注释追加在同一个文件末尾，不生成 `.bak`，且该路径只有自动化测试覆盖。
+- 让写盘失败（配置路径被目录占用）：面板保留新顺序，配额标题旁出现 `order not saved`，提示里带服务给出的原因。
+
+未验证：
+
+- `docs/images/` 里的大部分截图拍摄于 `fontScale`（旧 12px 设计尺寸）与 0.3.1 之前。Command Code 额度卡对、排序对与折叠列表已在 0.4.0 上重拍；其余功能组仍需重拍。
+- Electron 右侧栏外壳与权限批准对话框：截图使用真实安装的扩展在 OpenChamber 界面中运行，但宿主窗口外壳被裁掉。
+- 完整 `--oc-*` 主题矩阵：截图中的面板是浅色主题；深色宿主主题未逐一对比。
+- 其他 magpie 版本的窗口命名与 `pool` 字段：折叠规则只认 `(High|Low|Medium)`，且只作用于有 pool 的窗口。
+- 上游 `kept=1` 在其他 magpie 版本下的语义；本机返回空列表。
+- 没有针对当前构建做过真实宿主安装：JSONC 文件、默认收起的配置卡、首开自动创建、复制路径按钮、409 `config-conflict` 路径与原地重建，都只由自动化测试（`tests/config-document.test.ts`、`tests/service.test.ts`、`tests/panel-host.test.ts`，配合 fake host、happy-dom 与本地真实 HTTP）覆盖。当前构建没有做过右侧栏像素检查。
+- `docs/images/` 里的截图同样早于 `config.jsonc` 与默认收起的配置卡。
+- 跨进程写入竞态：写入在单个服务进程内串行，发布前会重读文件，但另一个进程在这次读取与 `rename` 之间写入的情况无法由测试套件排除。
+
 ## 调试
 
-没有开发服务器。实际循环是：构建，把目录作为本地扩展安装，打开面板，读配置卡与服务状态徽章。配置卡显示配置路径、生效端点、是否配置密钥、刷新间隔、当前 `fontScale` 百分比、配置问题与重置备份路径。错误卡显示服务给出的类别、状态码与端点。
+没有开发服务器。实际循环是：构建，把目录作为本地扩展安装，打开面板，读配置卡与服务状态徽章。配置卡显示配置路径、文件有效性、生效端点、是否配置密钥、刷新间隔、当前 `fontScale` 百分比、配置问题，以及重建后的恢复详情（哪些字段被恢复、哪些回退默认）。错误卡显示服务给出的类别、状态码与端点。
 
 常用检查：
 
 - `bun test tests/service.test.ts` 检查服务契约。
 - `bun test tests/panel-host.test.ts` 检查面板到宿主的桥接。
 - `GET /health` 返回 `{ ok, name, apiVersion }`。服务只绑 `127.0.0.1`，要求 `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN`。如果必须探测运行中的服务，使用环境里的宿主 token；不要把 token 粘进 issue、日志或提交。
-- `GET /config` 显示 `language`、`languageInvalid`、`cardOrder`、`fontScale`、`fontScaleInvalid`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。
+- `GET /config` 回报 `configPath`、`baseUrl`、`host`、`loopback`、`language`、`languageInvalid`、`cardOrder`、`cardOrderInvalid`、`fontScale`、`fontScaleInvalid`、`refreshSeconds`、`recovery`、`source`、`present`、`validity`、`issue`、`issues`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。写路由是 `POST /config/create` 与 `POST /config/order`；其他方法/路径组合一律 405 或 404。
 - 上游网关是环回地址时可直接探测：`GET http://127.0.0.1:3425/v1/magpie/usage?period=today` 与 `GET http://127.0.0.1:3425/v1/magpie/quotas`。
 
-服务每个请求都重读 `config.json`，改好文件即可生效，不用重启。语言改动在下一轮面板刷新（默认 60 秒）生效。服务不记录 token；不要破坏这一点。
+服务每个请求都重读 `config.jsonc`，改好文件即可生效，不用重启。语言改动在下一轮面板刷新（默认 60 秒）生效。服务不记录 token；不要破坏这一点。
 
 ## 安装、版本、CI
 
@@ -117,7 +192,7 @@ git diff --exit-code -- panel/main.js service/main.js
 规则：
 
 - 只用本机的真实截图。不要用示意图、mockup、旧图或无关截图。
-- 覆盖 8 组：安装入口、用量汇总、趋势、额度卡（池化与分层折叠）、余额卡、错误卡、排序、配置与语言。
+- 覆盖 8 组：安装入口、用量汇总、趋势、额度卡（套餐卡与折叠列表）、余额卡、错误卡、排序、配置与语言。
 - Magpie 桌面端有同一界面时，必须两应用并排：同一功能，尽量同一周期/供应商。确实没有对应界面时，只截 OpenChamber，并在图注说明。
 - 裁到相关面板、卡片或设置页。不要带无关项目、会话、终端或桌面。
 - 邮箱、账户 ID、API key 片段、本机绝对路径等个人信息用不可逆的实心色块或像素化去掉。不要用可逆效果或假占位。
@@ -193,8 +268,8 @@ import zhCN from '../../panel/locales/zh-CN.json';
 
 面板没有语言控件。设置放在已安装包之外，因为宿主更新时会替换 Git 安装的包目录：
 
-- `$XDG_CONFIG_HOME/openchamber-magpie-usage/config.json`，或
-- 没有 `XDG_CONFIG_HOME` 时的 `~/.config/openchamber-magpie-usage/config.json`。Windows 使用同一 `~/.config` 布局，例如 `%USERPROFILE%\.config\openchamber-magpie-usage\config.json`。
+- `$XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc`，或
+- 没有 `XDG_CONFIG_HOME` 时的 `~/.config/openchamber-magpie-usage/config.jsonc`。Windows 使用同一 `~/.config` 布局，例如 `%USERPROFILE%\.config\openchamber-magpie-usage\config.jsonc`。
 
 文件已经保存 Magpie 端点设置；加上 `language`：
 
@@ -216,11 +291,17 @@ import zhCN from '../../panel/locales/zh-CN.json';
 | `language` 不是非空字符串 | `auto`；`languageInvalid` 为 true，面板显示带路径的提示。端点与密钥照常生效。 |
 | 合法字符串但不是运行时 code（未知，或 `ar` 这类 `test` 夹具） | `auto`；面板显示带路径的 `config.language.unsupported`。 |
 | 宿主 locale 为 `ar`（测试夹具） | `auto` 解析为英文、`dir=ltr`；无提示。 |
-| 文件缺失 | `auto`；原有的「No config file yet」说明使用宿主语言。 |
-| JSON 非法 | `auto`；原有配置问题说明使用宿主语言。 |
+| 文件缺失 | `auto`；原有的「No config file yet」说明使用宿主语言，卡片同时给出「创建配置文件」按钮。 |
+| JSONC 文档非法（语法错误、重复顶层键、根不是对象） | `auto`；原有配置问题说明使用宿主语言。 |
 | 服务不可用 | 面板保持英文；服务卡显示原有错误。 |
 
 卸载扩展会留下配置目录。
+
+### 从右到左的布局
+
+`ar` 夹具仍参与 `tests/i18n.test.ts` 的方向检查：键齐全、阿拉伯语的六种 CLDR 复数类别、与英文一致的占位符。`panel/styles.css` 在 `[dir='rtl']` 下会去掉拉丁文案使用的字距（字距会拆开阿拉伯语连写），但当前没有任何运行时语言解析为 `dir="rtl"`。
+
+未覆盖：阿语文案是为测试排版而写，未经母语校对；在只有 `en` 与 `zh-CN` 运行期间，镜像布局无法通过配置触达。原先面板级的阿拉伯语 RTL 测试已被回退测试取代。
 
 ## 提交检查
 
