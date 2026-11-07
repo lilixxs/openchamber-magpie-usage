@@ -10,6 +10,7 @@ This is an OpenChamber guest extension: a sandboxed panel plus a local Node serv
 - OpenChamber 2.5.0 or newer (the manifest declares `engines.openchamber >= 2.5.0`).
 - A checkout of this repository.
 - Bun is needed only to build the committed bundles: OpenChamber does not compile TypeScript and installs only the checked-in `panel/main.js` and `service/main.js`.
+- Node 22+ must be on `PATH` (a prerequisite for local tests): `tests/service-bundle.test.ts` starts the on-disk `service/main.js` with a real Node process and fails (never skips) when Node is missing. CI provides Node 22 via `actions/setup-node@v4`. A host install needs no system Node — the host runtime starts the service; Bun is only the build/test tool, and the source-level service tests still run under Bun.
 - No dev server, watcher, or release script exists.
 
 ```bash
@@ -29,6 +30,7 @@ bun run typecheck      # tsc --noEmit
 
 - `panel/main.js` is a classic IIFE. The sandboxed iframe cannot load ESM.
 - `service/main.js` is built with `--node`; it keeps ESM and Node built-ins.
+- `jsonc-parser` must be imported explicitly from `jsonc-parser/lib/esm/main.js` (see `src/shared/config-document.ts`). The package-root import resolves to the UMD entry under Bun's `--node` target and leaves internal relative `require('./impl/*')` calls in the single-file bundle, so the host's Node dies at startup with `MODULE_NOT_FOUND`. A successful build does not mean the bundle runs under Node; `tests/service-bundle.test.ts` is the regression test for exactly this trap.
 - Both bundles are committed. A source change without a rebuilt bundle is incomplete.
 - `bun run build` only produces those two JS files. `panel/index.html` and `panel/styles.css` are static package files: `index.html` links the stylesheet. They are not build outputs. There are no font assets: the stylesheet has no `@font-face` rules.
 
@@ -75,6 +77,7 @@ Creation and storage:
 - First open: when the file is genuinely missing and the instance-scoped host-storage marker `openchamber-magpie-usage:v1:config-initialized` is absent, the panel posts `POST /config/create` once and gets the full bilingual template. If the marker already exists and the file is later deleted, the panel does not recreate it; the Configuration card shows the create button instead.
 - That marker is the only thing the panel stores. There is no `localStorage`, `sessionStorage`, IndexedDB, or cookie, and the marker never holds the config, the path, the key, the order, or a fold state. If the marker cannot be read or written, the panel neither auto-creates nor treats the state as a first install; the manual button stays available.
 - Reordering cards while the file is missing is the explicit exception: it creates the template with the current order.
+- When the panel's `/config` read fails (service error or malformed shape), the card header shows `config.status.unchecked` (`Unable to check`, warning tone) rather than the file being `invalid`; `config.loadFailed` states the reason and never echoes upstream text. A failure outranks the previous validity: an old `Valid` never outlives the answer that proved it, and the next successful read restores the real state. Usage/quotas failures never turn a valid config into `Unable to check`; during a failure nothing writes storage, nothing triggers a create, and a stale `missing` report never authorises one.
 
 Writes and recovery:
 
@@ -84,17 +87,19 @@ Writes and recovery:
 - A structurally damaged document (syntax error, duplicate top-level key, non-object root) is rebuilt only when an order is saved: the full template plus the submitted order, then the previous text appended line by line as `//` comments under a bilingual marker. No `.bak` file is created and old backups are not deleted. Field-value errors do not rebuild — only `cardOrder` changes. Unreadable, permission-denied, and non-regular paths are never overwritten or reported as success.
 - The service keeps `{ at, restored, defaulted, previousText: 'appended-comments' }` in memory until it restarts; the report never contains the old text or anything derived from the key.
 
-Coverage: `tests/config-document.test.ts` (inspection, recovery, local edit), `tests/service.test.ts` (`POST /config/create`, `POST /config/order`, the `/config` report), `tests/panel-host.test.ts` (card shell and creation flow).
+Coverage: `tests/config-document.test.ts` (inspection, recovery, local edit), `tests/service.test.ts` (`POST /config/create`, `POST /config/order`, the `/config` report), `tests/service-bundle.test.ts` (`/config`, creation, and order saves after a real Node starts the bundle), `tests/panel-host.test.ts` (card shell, creation flow, and the read-failure status).
 
 ## Test
 
 ```bash
 bun test
 bun test tests/quotas.test.ts
-bun run check   # typecheck -> all tests -> build
+bun run check   # typecheck -> build -> tests
 ```
 
-Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the service module from `src/service/server.ts`. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 280 passing tests in 13 files.
+The order of `bun run check` is fixed by `package.json` as typecheck → build → test: build first, then test, so the tests (especially the bundle test) verify the artifacts generated from the current sources. The total test count is taken from the output of the current `bun run check` rather than hard-coded in this document.
+
+Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the service module from `src/service/server.ts`. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. Except for `tests/service-bundle.test.ts`, the source-level service tests load the service module from `src/` under Bun — together they cover only source/bridge behaviour plus some local HTTP and do not prove that the on-disk `service/main.js` starts under Node.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and:
 
@@ -111,19 +116,20 @@ git diff --exit-code -- panel/main.js service/main.js
 | `tests/i18n.test.ts` | Registry validity, key parity, placeholder parity, CLDR plural categories (`one/other` in English, `other` in `zh-CN`), interpolation/fallback, exact `resolveLocale` matching and unsupported markers; the Arabic `test` fixture is RTL but never a runtime match. |
 | `tests/format.test.ts` | Number, cost, credit, percentage, and time formatting; zero hit-rate denominator; window-percentage fallback chain; money-row priority. |
 | `tests/quotas-view.test.ts` | Pool grouping and layered folding (Antigravity's three rows, nine hidden layers), duration sorting, pool-less windows sharing a row, remaining-amount rows, balance splitting, tightest remaining, icon mapping and fallback. |
-| `tests/service.test.ts` | Bearer check, `/health` contract, `/config` report (path, endpoint, `apiKeyConfigured` without the key, `fontScale`/`fontScaleInvalid`, `validity`, `recovery`, the old `config.json` being ignored, and a BOM-prefixed file keeping its endpoint/key), immediate config reload, 405/404 method/path combinations; `POST /config/create` (bilingual six-field template, empty body, explicit order, an existing file left untouched, bad bodies, a non-regular path refused); `POST /config/order` (only `cardOrder` edited, unknown keys and mode preserved, BOM and outside comments preserved, creation when missing, in-place rebuild with no `.bak`, a BOM-prefixed rebuild that keeps the BOM and comments the BOM-free old body, a field error that does not rebuild, bad and oversized bodies, concurrent writes, 401). |
+| `tests/service.test.ts` | Bearer check, `/health` contract, `/config` report (path, endpoint, `apiKeyConfigured` without the key, `fontScale`/`fontScaleInvalid`, `validity`, `recovery`, the old `config.json` being ignored, and a BOM-prefixed file keeping its endpoint/key), immediate config reload, 405/404 method/path combinations; `POST /config/create` (bilingual six-field template, empty body, explicit order, an existing file left untouched, bad bodies, a non-regular path refused); `POST /config/order` (only `cardOrder` edited, unknown keys and mode preserved, BOM and outside comments preserved, creation when missing, in-place rebuild with no `.bak`, a BOM-prefixed rebuild that keeps the BOM and comments the BOM-free old body, a field error that does not rebuild, bad and oversized bodies, concurrent writes, 401). All of it loads the service module from `src/` under Bun. |
+| `tests/service-bundle.test.ts` | Real-Node regression for the on-disk `service/main.js` bundle: the bundle is copied into an isolated temp directory without `node_modules` and started by a real Node child process from `PATH` (never Bun's `process.execPath`), covering bearer auth, the `/health` contract, the missing-file fallback, the bilingual template from `POST /config/create`, `config.jsonc` values reaching `/config`, usage/quotas forwarded to a fake gateway over real HTTP, and a `POST /config/order` save that keeps comments and unknown keys without echoing the key. A bundle that still resolves `./impl/*` fails here instead of only on the host. When Node is missing the test fails, never skips. |
 | `tests/usage.test.ts` | Period and key forwarding, default/invalid periods, missing fields without NaN, 401/403/500/timeout/connection failure/non-JSON/schema mismatch. |
 | `tests/quotas.test.ts` | All card variants, `kept`/`refresh` forwarding, throttling, empty-cache fallback, cross-origin redirect rejection, same-origin redirect following. |
 | `tests/secret.test.ts` | The key never appears in `/config`, logs, or build artifacts; no key literal in source. |
 | `tests/panel-bundle.test.ts` | The panel is a classic IIFE, has no fetch/XHR, uses no `localStorage`/`sessionStorage`/IndexedDB/cookie and only host instance storage for the first-open marker (never the config, path, key, order, or fold state), uses only `--oc-*`, mounts controls once outside `onReady`, inlines icons as data URIs, and contains the two-column grid and container query. |
-| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`; Arabic fallback to English with `dir=ltr`; root font-size after repeated ready; the invalid `fontScale` notice; chart labels: the `MM-DD` and `HH` text, fixed counts, and independence from `fontScale`; the Configuration card shell (last before the footer, collapsed by default, header status from file validity only, remount resets it, path copy button with success and failure feedback, recovery details in the body); configuration creation (first open creates once then remembers, an existing file is never overwritten, a storage failure neither auto-creates nor blocks the manual button, the confirm/cancel flow posts only intent and order, a failed create stays retryable, a marker write failure never rolls back the file). |
+| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`; Arabic fallback to English with `dir=ltr`; root font-size after repeated ready; the invalid `fontScale` notice; chart labels: the `MM-DD` and `HH` text, fixed counts, and independence from `fontScale`; the Configuration card shell (last before the footer, collapsed by default, header status from file validity only, remount resets it, path copy button with success and failure feedback, recovery details in the body); configuration creation (first open creates once then remembers, an existing file is never overwritten, a storage failure neither auto-creates nor blocks the manual button, the confirm/cancel flow posts only intent and order, a failed create stays retryable, a marker write failure never rolls back the file); configuration read failures (when `/config` fails or is malformed the card header says `Unable to check`, not `Invalid`/`Checking`, `config.loadFailed` shows the reason without echoing upstream text, the next successful read restores the real validity, usage/quotas failures never turn a valid config into `Unable to check`, and nothing writes storage or triggers a create during the failure). |
 | `tests/health.test.ts` | The shared `/health` contract used by the panel and the service. |
 | `tests/manifest.test.ts` | Manifest paths, required build artifacts, and package metadata. |
 | `tests/harness.ts`, `tests/fixtures.ts` | Fake gateway and captured payload fixtures; support files, not test suites. |
 
 ## Verification
 
-The record behind the README's behaviour and screenshot claims. Verified on 2026-11-01; it predates `fontScale`, the language-fallback change, and the switch to `config.jsonc`. The suite now has 280 passing tests in 13 files, and `bun run check` remains the gate. The hashes and sizes below belong to that 2026-11-01 build and no longer describe the current bundles, which were rebuilt later for the JSONC change:
+The record behind the README's behaviour and screenshot claims. Verified on 2026-11-01; it predates `fontScale`, the language-fallback change, and the switch to `config.jsonc`. The suite's total test count is taken from the output of the current `bun run check` (the historical record is 280 tests in 13 files), and `bun run check` remains the gate. The hashes and sizes below belong to that 2026-11-01 build and no longer describe the current bundles, which were rebuilt later for the JSONC change:
 
 - `bun run check` passed: typecheck, 211 tests in 12 files (0 fail, 1,783 expectations), and both builds.
 - Two consecutive builds were byte-identical. SHA-256:
@@ -137,6 +143,8 @@ The record behind the README's behaviour and screenshot claims. Verified on 2026
 - Dragging the first card to third position wrote `cardOrder` while preserving `baseUrl`; reopening the panel kept the order. Keyboard `End` moved a card and `aria-live` announced "moved to position 12 of 12".
 - Writing invalid JSON into `config.json` and then dragging a card copied the original byte-for-byte to `config.json.bak` and rewrote a valid file containing only `cardOrder` (two-space indent, trailing newline). Configuration reported `config.json was invalid; saved as … and reset`. This bullet records the pre-JSONC behaviour: the current code rebuilds `config.jsonc` in place with the old text appended as `//` comments and creates no `.bak`, and that path has only automated coverage.
 - A forced write failure (config path occupied by a directory) kept the new order, showed `order not saved` next to Quotas, and included the service's reason.
+- 2026-11-08 service-startup fix verified: `bun run check` (typecheck → build → test) green with 293 tests in 14 files and byte-identical consecutive builds; `tests/service-bundle.test.ts` copies `service/main.js` into an isolated directory without `node_modules` and starts it with a real Node from `PATH`, covering auth, `/health`, `/config`, `POST /config/create`, fake-gateway usage/quotas forwarding, and `POST /config/order` writes. Panel regressions also cover rechecking config freshness after asynchronous initialization and clearing a resolved automatic-create error after manual success.
+- The same fix was also checked against the real loopback Magpie gateway (`127.0.0.1:3425`) using the built service under Node 22.23.4 in a disposable directory: `/config`, usage, and quotas returned 200; quotas returned 14 cards. This probe used neither the user's config nor a real key. It does not verify installation in OpenChamber or sidebar appearance.
 
 Not verified:
 
@@ -146,12 +154,15 @@ Not verified:
 - Other Magpie versions' window names and `pool` fields: the folding rule only recognises `(High|Low|Medium)` and only applies inside a pool.
 - The semantics of upstream `kept=1` on other Magpie versions; on this machine it returns an empty list.
 - No real-host install of the current build: the JSONC file, the collapsed Configuration card, the first-open auto-create, the copy-path button, the 409 `config-conflict` path, and the in-place rebuild were exercised only by automated tests (`tests/config-document.test.ts`, `tests/service.test.ts`, `tests/panel-host.test.ts`) with a fake host, happy-dom, and real local HTTP. No right-sidebar pixel check was made for the current build.
+- The `Unable to check` status on a failed config read, the `config.loadFailed` notice, and recovery on a successful retry are covered only by `tests/panel-host.test.ts` with a fake host; they have not been verified in a real Electron host.
 - The screenshots in `docs/images/` also predate `config.jsonc` and the collapsed Configuration card.
 - Cross-process write races: writes are serialised inside one service process and the file is re-read just before publishing, but a write from another process between that read and the `rename` cannot be excluded by the suite.
 
 ## Debugging
 
 There is no development server. Build, then add this folder as a local extension in OpenChamber's **Settings → Extensions** and open the panel. The Configuration card and the `serviceStatus` badge are the first debugging surfaces.
+
+Common checks: `bun test tests/service.test.ts` for the service contract; `bun test tests/service-bundle.test.ts` for the on-disk `service/main.js` starting under a real Node (Node must be on `PATH`); `bun test tests/panel-host.test.ts` for the panel-to-host bridge.
 
 The service needs both variables from the host:
 
@@ -181,7 +192,7 @@ Version and artifacts:
 3. Run `bun run check`.
 4. Commit `package.json`, `panel/main.js`, and `service/main.js`.
 
-There is no publish or release script. CI is `.github/workflows/ci.yml`: Ubuntu, Bun 1.4.2, frozen lockfile, `bun run check`, and the bundle diff.
+There is no publish or release script. CI is `.github/workflows/ci.yml`: Ubuntu, `actions/setup-node@v4` with Node 22 (the bundle test needs a real Node), Bun 1.4.2, frozen lockfile, `bun run check`, and the bundle diff.
 
 ## Screenshots
 

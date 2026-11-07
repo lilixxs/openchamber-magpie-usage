@@ -5,6 +5,9 @@
  * its types are part of the contract the panel renders. It imports the pure
  * field parsers from `magpie.ts` and never touches Node or the DOM.
  */
+// The Node-target bundler selects the package's UMD `main` by default. That
+// wrapper passes require as a function argument, leaving ./impl/* unresolved
+// in a single-file bundle. Pin the ESM entry so its imports are all bundled.
 import {
   findNodeAtLocation,
   parse,
@@ -12,7 +15,7 @@ import {
   printParseErrorCode,
   type Node,
   type ParseError,
-} from 'jsonc-parser';
+} from 'jsonc-parser/lib/esm/main.js';
 
 import {
   DEFAULT_BASE_URL,

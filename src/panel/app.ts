@@ -219,6 +219,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const configRows = el('div', 'rows');
   const configIssue = el('p', 'issue');
   configIssue.hidden = true;
+  const configLoadIssue = el('p', 'issue config-load-issue');
+  configLoadIssue.hidden = true;
   const configLanguage = el('p', 'issue');
   configLanguage.hidden = true;
   const configFontScale = el('p', 'issue');
@@ -259,6 +261,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   configBody.append(
     configRows,
     configCopyStatus,
+    configLoadIssue,
     configIssue,
     configRecovery,
     configLanguage,
@@ -329,6 +332,12 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   type State = {
     period: Period;
     config: ConfigReport | null;
+    /**
+     * Why the last `/config` read failed: a host/service error, a non-JSON
+     * answer, or a bad shape. Kept apart from `config`, which holds the last
+     * good report, so "cannot check" is never mistaken for a file state.
+     */
+    configLoadError: string | null;
     usage: UsageReport | null;
     quotas: QuotaReport | null;
     /** Card order as last read from or written to the config file. */
@@ -347,6 +356,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const state: State = {
     period: 'today',
     config: null,
+    configLoadError: null,
     usage: null,
     quotas: null,
     order: [],
@@ -471,7 +481,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     refreshButton.update({ label: t('button.refresh') });
     badge.update({ label: t(badgeKey), tone: badgeTone });
 
-    if (state.config) renderConfig();
+    if (state.config || state.configLoadError !== null) renderConfig();
     else setText(configStatus, t('config.status.checking'));
     if (state.usage) renderUsage();
     if (state.quotas) renderQuotas();
@@ -483,9 +493,15 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
 
   const syncLocale = async (): Promise<void> => {
     if (disposed) return;
+    if (!registry) return;
+    // Before the first successful read the setting is `auto`, so the host locale
+    // applies and the panel stays readable while /config fails. A failed read
+    // keeps the last good report, including its language.
     const config = state.config;
-    if (!registry || !config) return;
-    const setting = typeof config.language === 'string' && config.language !== '' ? config.language : 'auto';
+    const setting =
+      config && typeof config.language === 'string' && config.language !== ''
+        ? config.language
+        : 'auto';
     const resolved = resolveLocale(setting, hostLocale, localeCodes());
     if (resolved.locale === activeLocale) return;
 
@@ -509,7 +525,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     await syncLocale();
     // The registry decides whether an explicit language is supported, which
     // feeds the configuration card status.
-    if (state.config) renderConfig();
+    if (state.config || state.configLoadError !== null) renderConfig();
   };
 
   /* -------------------------------------------------------------------------- */
@@ -627,18 +643,31 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
 
+  /**
+   * A failed `/config` read is its own state, never a file state: the last good
+   * report is kept for the path, but the card says the file could not be checked
+   * and nothing that writes may treat the stale answer as current.
+   */
+  const noteConfigLoadFailure = (message: string): void => {
+    state.configLoadError = message;
+    setMessage(banner, message);
+    renderConfig();
+    void syncLocale();
+  };
+
   const loadConfig = async (): Promise<void> => {
     const answer = await fetchJson('/config');
     if (disposed) return;
     if (!answer.ok) {
-      setMessage(banner, answer.message);
+      noteConfigLoadFailure(answer.message);
       return;
     }
     const value = answer.value;
     if (!isRecord(value) || typeof value.configPath !== 'string' || typeof value.baseUrl !== 'string') {
-      setMessage(banner, t('error.shape.config'));
+      noteConfigLoadFailure(t('error.shape.config'));
       return;
     }
+    state.configLoadError = null;
     state.config = value as unknown as ConfigReport;
     // A failed save keeps the on-screen order; do not let a later config read
     // snap the cards back to the old file order before the next retry.
@@ -709,7 +738,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
 
   const createMissingConfig = async (): Promise<void> => {
     const config = state.config;
-    if (!config || creatingConfig) return;
+    // A stale `missing` from before a failed read must not write to disk.
+    if (!config || creatingConfig || state.configLoadError !== null) return;
     creatingConfig = true;
     configCreateButton.disabled = true;
     configCreateYes.disabled = true;
@@ -761,15 +791,37 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const initializeConfig = async (): Promise<void> => {
     if (initState !== 'idle' || disposed) return;
     const config = state.config;
-    if (!config) return;
+    // Without a fresh read the file's presence is unknown; stay idle so a later
+    // successful read can still run the first-open flow once.
+    if (!config || state.configLoadError !== null) return;
     initState = 'running';
     // Disable the manual button while the automatic create is in flight.
     renderConfig();
+
+    /**
+     * A read that landed while we waited may have failed or replaced the
+     * snapshot; decisions then rest on a report the panel no longer trusts.
+     */
+    const snapshotIsCurrent = (): boolean =>
+      !disposed && state.config === config && state.configLoadError === null;
+
+    /**
+     * Back to idle, not done: a later successful read may run the flow again.
+     * Used whenever the panel can no longer vouch for the file's state.
+     */
+    const abandon = (): void => {
+      initState = 'idle';
+      renderConfig();
+    };
 
     try {
       if (!host.storage) throw new Error('Extension storage is unavailable.');
       const marker = await host.storage.get(INIT_MARKER_KEY, STORAGE_OPTIONS);
       if (disposed) return;
+      if (!snapshotIsCurrent()) {
+        abandon();
+        return;
+      }
       if (marker !== undefined) {
         initState = 'done';
         renderConfig();
@@ -824,6 +876,14 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       return;
     }
 
+    // The create answered, but a read that failed (or replaced the snapshot)
+    // while it was in flight leaves the file state unknown: do not record a
+    // completed first open and do not write the marker.
+    if (!snapshotIsCurrent()) {
+      abandon();
+      return;
+    }
+
     try {
       if (!host.storage) throw new Error('Extension storage is unavailable.');
       await host.storage.set(
@@ -873,41 +933,73 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     if (key === 'config.status.valid') return 'success';
     if (key === 'config.status.invalid') return 'error';
     if (key === 'config.status.unreadable') return 'warning';
+    // "Cannot check" is a check failure, not a verdict on the file.
+    if (key === 'config.status.unchecked') return 'warning';
     return 'neutral';
   };
 
   const renderConfig = (): void => {
     const config = state.config;
-    if (!config) {
+    const loadError = state.configLoadError;
+    if (!config && loadError === null) {
       setText(configStatus, t('config.status.checking'));
       configStatus.dataset.tone = 'neutral';
+      setMessage(configLoadIssue, null);
       return;
     }
 
-    setText(configPathValue, config.configPath);
-    configPathValue.title = t('config.copy');
-    setText(
-      endpointValue,
-      `${config.baseUrl}${t(config.loopback ? 'config.endpoint.loopback' : 'config.endpoint.remote')}`,
-    );
-    endpointValue.title = config.baseUrl;
-    setText(keyValue, t(config.apiKeyConfigured ? 'config.configured' : 'config.notConfigured'));
-    setText(refreshValue, t('config.everySeconds', { seconds: config.refreshSeconds }));
-    const fontScale = typeof config.fontScale === 'number' ? config.fontScale : DEFAULT_FONT_SCALE;
-    setText(fontScaleValue, `${fontScale}%`);
-    setMessage(
-      configFontScale,
-      config.fontScaleInvalid ? t('config.fontScale.invalid', { path: config.configPath }) : null,
-    );
-    applyFontScale(fontScale);
-    setText(
-      subtitle,
-      t(config.loopback ? 'usage.endpoint.loopback' : 'usage.endpoint.remote', { host: config.host }),
-    );
+    if (config) {
+      setText(configPathValue, config.configPath);
+      configPathValue.title = t('config.copy');
+      setText(
+        endpointValue,
+        `${config.baseUrl}${t(config.loopback ? 'config.endpoint.loopback' : 'config.endpoint.remote')}`,
+      );
+      endpointValue.title = config.baseUrl;
+      setText(keyValue, t(config.apiKeyConfigured ? 'config.configured' : 'config.notConfigured'));
+      setText(refreshValue, t('config.everySeconds', { seconds: config.refreshSeconds }));
+      const fontScale = typeof config.fontScale === 'number' ? config.fontScale : DEFAULT_FONT_SCALE;
+      setText(fontScaleValue, `${fontScale}%`);
+      setMessage(
+        configFontScale,
+        config.fontScaleInvalid ? t('config.fontScale.invalid', { path: config.configPath }) : null,
+      );
+      applyFontScale(fontScale);
+      setText(
+        subtitle,
+        t(config.loopback ? 'usage.endpoint.loopback' : 'usage.endpoint.remote', { host: config.host }),
+      );
+    }
 
-    const statusKey = configStatusKey(config);
+    // A failed read outranks the last good report: an old `Valid` must never
+    // outlive the answer that proved it.
+    const statusKey =
+      loadError !== null
+        ? 'config.status.unchecked'
+        : config
+          ? configStatusKey(config)
+          : 'config.status.checking';
     setText(configStatus, t(statusKey));
     configStatus.dataset.tone = configStatusTone(statusKey);
+    setMessage(
+      configLoadIssue,
+      loadError === null ? null : t('config.loadFailed', { message: loadError }),
+    );
+
+    if (!config || loadError !== null) {
+      // Nothing that writes may act on a report taken before the failure.
+      setMessage(configIssue, null);
+      setMessage(configLanguage, null);
+      setMessage(configFontScale, null);
+      setMessage(configNote, null);
+      setMessage(configInit, null);
+      clear(configRecovery);
+      configRecovery.hidden = true;
+      configCreate.hidden = true;
+      configCreateConfirm.hidden = true;
+      setMessage(configCreateStatus, null);
+      return;
+    }
 
     const issues = Array.isArray(config.issues)
       ? config.issues.filter(
@@ -968,6 +1060,11 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       configNote,
       config.validity === 'missing' ? t('config.missing', { path: config.configPath }) : null,
     );
+    // A confirmed existing file resolves a failed automatic create; the real
+    // storage warnings (`markerFailed`, `createdMarkerFailed`) still stand.
+    if (config.present && config.validity !== 'missing' && initMessage?.key === 'config.init.createFailed') {
+      initMessage = null;
+    }
     setMessage(configInit, initMessage ? t(initMessage.key, initMessage.vars) : null);
 
     const missing = config.validity === 'missing';

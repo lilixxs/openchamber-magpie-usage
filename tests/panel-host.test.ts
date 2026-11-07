@@ -152,6 +152,8 @@ type StorageState = {
   setCalls: number;
   getError: Error | null;
   setError: Error | null;
+  /** When set, a `get` waits for it before answering; lets a test interleave a config read. */
+  getGate: Promise<void> | null;
 };
 
 type HostState = {
@@ -180,6 +182,7 @@ const makeHost = (reply: Responder = respondOk): FakeHost => {
       setCalls: 0,
       getError: null,
       setError: null,
+      getGate: null,
     },
     clipboard: [],
     clipboardError: null,
@@ -202,6 +205,7 @@ const makeHost = (reply: Responder = respondOk): FakeHost => {
       get: async (key: string): Promise<unknown> => {
         state.storage.getCalls += 1;
         if (state.storage.getError) throw state.storage.getError;
+        if (state.storage.getGate) await state.storage.getGate;
         return state.storage.values.get(key);
       },
       set: async (key: string, value: unknown): Promise<void> => {
@@ -1478,6 +1482,357 @@ describe('configuration creation', () => {
     expect(host.state.storage.values.get(INIT_KEY)).toBeUndefined();
     expect(text(root.querySelector('.config-body'))).toContain('marker write failed');
     expect(configStatusText()).toBe('Valid');
+  });
+});
+
+describe('configuration check failures', () => {
+  const configLoadIssue = (): HTMLElement =>
+    root.querySelector('.config-load-issue') as HTMLElement;
+
+  test('a failed first /config says Unable to check, not Checking, and never initialises storage', async () => {
+    const host = makeHost((request) =>
+      request.path === '/config'
+        ? new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET')
+        : respondOk(request),
+    );
+    start(host);
+    await tick();
+
+    expect(configStatusText()).toBe('Unable to check');
+    expect(root.querySelector('.config-status')?.getAttribute('data-tone')).toBe('warning');
+    expect(configLoadIssue().hidden).toBe(false);
+    expect(text(configLoadIssue())).toBe(
+      'The configuration could not be checked: The local service stopped. It restarts on the next request.',
+    );
+    expect(text(root)).not.toContain('UPSTREAM_TEXT_SECRET');
+    // Usage and quotas still paint; only the file state is unknown.
+    expect(root.querySelectorAll('.quo-card[data-key]').length).toBe(3);
+    expect((root.querySelector('.config-create') as HTMLElement).hidden).toBe(true);
+    expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+    expect(host.state.storage.getCalls).toBe(0);
+    expect(host.state.storage.setCalls).toBe(0);
+  });
+
+  test('a malformed /config is Unable to check, not Invalid', async () => {
+    const host = makeHost((request) =>
+      request.path === '/config' ? json({ configPath: 42 }) : respondOk(request),
+    );
+    start(host);
+    await tick();
+
+    expect(configStatusText()).toBe('Unable to check');
+    expect(configStatusText()).not.toBe('Invalid');
+    expect(text(configLoadIssue())).toBe(
+      'The configuration could not be checked: The local service answered /config with an unexpected shape.',
+    );
+  });
+
+  test('a failed reload after Valid shows Unable to check, then the retry restores the real validity', async () => {
+    let mode: 'ok' | 'fail' | 'invalid' = 'ok';
+    const host = makeHost((request) => {
+      if (request.path !== '/config') return respondOk(request);
+      if (mode === 'fail') return new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET');
+      if (mode === 'invalid') return json(configReport({ validity: 'invalid' }));
+      return json(configReport());
+    });
+    start(host);
+    await tick();
+    expect(configStatusText()).toBe('Valid');
+    expect(configLoadIssue().hidden).toBe(true);
+
+    mode = 'fail';
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    expect(configStatusText()).toBe('Unable to check');
+    expect(configStatusText()).not.toBe('Valid');
+    expect(text(configLoadIssue())).toContain(SERVICE_FAILED);
+    expect(text(root)).not.toContain('UPSTREAM_TEXT_SECRET');
+    // The last known path stays available for copying.
+    configPathButton().click();
+    await tick();
+    expect(host.state.clipboard).toEqual([configReport().configPath]);
+
+    mode = 'invalid';
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    expect(configStatusText()).toBe('Invalid');
+    expect(configLoadIssue().hidden).toBe(true);
+  });
+
+  test('a stale Not created answer never authorises a create, and the fold survives the failure', async () => {
+    let failing = false;
+    const host = makeHost((request) => {
+      if (request.path === '/config') {
+        return failing
+          ? new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET')
+          : json(missingReport());
+      }
+      return respondOk(request);
+    });
+    host.state.storage.values.set(INIT_KEY, { version: 1 });
+    start(host);
+    await tick();
+
+    expect(configStatusText()).toBe('Not created');
+    configHead().click();
+    expect(configBodyEl().hidden).toBe(false);
+    expect((root.querySelector('.config-create') as HTMLElement).hidden).toBe(false);
+    const markerReads = host.state.storage.getCalls;
+
+    failing = true;
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+
+    expect(configStatusText()).toBe('Unable to check');
+    expect(text(configLoadIssue())).toContain(SERVICE_FAILED);
+    expect((root.querySelector('.config-create') as HTMLElement).hidden).toBe(true);
+    expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+    expect(host.state.storage.getCalls).toBe(markerReads);
+    expect(host.state.storage.setCalls).toBe(0);
+    expect(configBodyEl().hidden).toBe(false);
+  });
+
+  test('the failure status is localized from the host locale with no config read at all', async () => {
+    const host = makeHost((request) =>
+      request.path === '/config'
+        ? new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET')
+        : respondOk(request),
+    );
+    start(host, { locale: 'zh-CN' });
+    await tick();
+
+    expect(dom.document.documentElement.lang).toBe('zh-CN');
+    expect(configStatusText()).toBe('无法检查');
+    expect(text(configLoadIssue())).toBe(
+      '无法检查配置文件：本地服务已停止。下次请求时会重新启动。',
+    );
+    expect(text(root)).not.toContain('UPSTREAM_TEXT_SECRET');
+
+    configHead().click();
+    expect(configBodyEl().hidden).toBe(false);
+    host.emitReady({ locale: 'en' });
+    await tick();
+    expect(configStatusText()).toBe('Unable to check');
+    // A repeated snapshot that changes the language never folds the card back.
+    expect(configBodyEl().hidden).toBe(false);
+  });
+
+  test('usage or quota failures never turn a valid config into Unable to check', async () => {
+    const host = makeHost((request) => {
+      if (request.path === '/v1/magpie/usage' || request.path === '/v1/magpie/quotas') {
+        return new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET');
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+
+    expect(configStatusText()).toBe('Valid');
+    expect(configLoadIssue().hidden).toBe(true);
+  });
+
+  test('a failed first check leaves first-open initialisation pending', async () => {
+    let failing = true;
+    let present = false;
+    const host = makeHost((request) => {
+      if (request.path === '/config') {
+        if (failing) return new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET');
+        return json(present ? configReport() : missingReport());
+      }
+      if (request.path === '/config/create') {
+        present = true;
+        return json({ ok: true, created: true, present: true });
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+
+    expect(host.state.storage.getCalls).toBe(0);
+    expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+
+    failing = false;
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    await tick();
+
+    expect(configStatusText()).toBe('Valid');
+    expect(host.requests.filter((request) => request.path === '/config/create').length).toBe(1);
+    expect(host.state.storage.values.get(INIT_KEY)).toMatchObject({ version: 1 });
+  });
+
+  test('a successful manual create clears the resolved automatic-create failure only', async () => {
+    let present = false;
+    let autoFails = true;
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(present ? configReport() : missingReport());
+      if (request.path === '/config/create') {
+        if (!present && autoFails) {
+          autoFails = false;
+          return json(
+            { error: { kind: 'internal', message: 'The config file could not be written.' } },
+            500,
+          );
+        }
+        present = true;
+        return json({ ok: true, created: true, present: true });
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+
+    expect(configStatusText()).toBe('Not created');
+    expect(text(configBodyEl())).toContain('could not be created automatically');
+
+    configHead().click();
+    (root.querySelector('.config-create .config-action') as HTMLButtonElement).click();
+    const yes = root.querySelectorAll<HTMLButtonElement>('.config-confirm .config-action')[0];
+    yes?.click();
+    await tick();
+    await tick();
+
+    expect(configStatusText()).toBe('Valid');
+    // The create is resolved; that message must not outlive it.
+    expect(text(configBodyEl())).not.toContain('could not be created automatically');
+  });
+
+  for (const filePresent of [false, true]) {
+    const label = filePresent ? 'existing file' : 'missing file';
+
+    test(`a config failure during the first-open storage read writes nothing (${label})`, async () => {
+      let failing = true;
+      let present = filePresent;
+      const host = makeHost((request) => {
+        if (request.path === '/config') {
+          if (failing) return new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET');
+          return json(present ? configReport() : missingReport());
+        }
+        if (request.path === '/config/order') {
+          return json({
+            ok: true,
+            order: [],
+            recovery: { at: '2026-11-07T00:00:00.000Z', restored: [], defaulted: [], previousText: 'appended-comments' },
+          });
+        }
+        if (request.path === '/config/create') {
+          present = true;
+          return json({ ok: true, created: true, present: true });
+        }
+        return respondOk(request);
+      });
+      start(host);
+      await tick();
+      // The failed first read leaves the first-open flow pending with cards painted.
+      expect(configStatusText()).toBe('Unable to check');
+      expect(host.state.storage.getCalls).toBe(0);
+      expect(root.querySelectorAll('.quo-card[data-key]').length).toBe(3);
+
+      failing = false;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      host.state.storage.getGate = gate;
+      (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+      await tick();
+      expect(host.state.storage.getCalls).toBe(1);
+
+      // A concurrent read fails while the storage read is still in flight.
+      failing = true;
+      pressKey(0, 'ArrowDown');
+      await tick();
+      expect(configStatusText()).toBe('Unable to check');
+
+      release();
+      host.state.storage.getGate = null;
+      await tick();
+      await tick();
+
+      expect(configStatusText()).toBe('Unable to check');
+      expect(host.state.storage.setCalls).toBe(0);
+      expect(host.state.storage.values.get(INIT_KEY)).toBeUndefined();
+      expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+
+      // A later successful read still finishes the first-open flow exactly once.
+      failing = false;
+      (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+      await tick();
+      await tick();
+      await tick();
+
+      expect(configStatusText()).toBe('Valid');
+      expect(host.requests.filter((request) => request.path === '/config/create').length).toBe(
+        filePresent ? 0 : 1,
+      );
+      expect(host.state.storage.setCalls).toBe(1);
+      expect(host.state.storage.values.get(INIT_KEY)).toMatchObject({ version: 1 });
+    });
+  }
+
+  test('a config failure during the automatic create never records first-open completion', async () => {
+    let failing = true;
+    let present = false;
+    let createGate: Promise<void> = Promise.resolve();
+    let releaseCreate!: () => void;
+    const host = makeHost((request) => {
+      if (request.path === '/config') {
+        if (failing) return new HostRequestError('SERVICE_FAILED', 'UPSTREAM_TEXT_SECRET');
+        return json(present ? configReport() : missingReport());
+      }
+      if (request.path === '/config/order') {
+        return json({
+          ok: true,
+          order: [],
+          recovery: { at: '2026-11-07T00:00:00.000Z', restored: [], defaulted: [], previousText: 'appended-comments' },
+        });
+      }
+      if (request.path === '/config/create') {
+        return createGate.then(() => {
+          present = true;
+          return json({ ok: true, created: true, present: true });
+        });
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+    expect(configStatusText()).toBe('Unable to check');
+
+    failing = false;
+    createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    expect(host.requests.filter((request) => request.path === '/config/create').length).toBe(1);
+
+    // The create answered is pending; a read fails before the marker is written.
+    failing = true;
+    pressKey(0, 'ArrowDown');
+    await tick();
+    expect(configStatusText()).toBe('Unable to check');
+
+    releaseCreate();
+    await tick();
+    await tick();
+
+    // Unknown state is not a completed first open: nothing was recorded.
+    expect(host.state.storage.setCalls).toBe(0);
+    expect(host.state.storage.values.get(INIT_KEY)).toBeUndefined();
+    expect(configStatusText()).toBe('Unable to check');
+
+    // The file now exists; the next successful read records the marker once.
+    failing = false;
+    createGate = Promise.resolve();
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    await tick();
+    await tick();
+
+    expect(configStatusText()).toBe('Valid');
+    expect(host.state.storage.setCalls).toBe(1);
+    expect(host.requests.filter((request) => request.path === '/config/create').length).toBe(1);
   });
 });
 

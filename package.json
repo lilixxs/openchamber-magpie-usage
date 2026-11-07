@@ -29,7 +29,7 @@
     "build:service": "openchamber-guest-bundle --node src/service/main.ts service/main.js",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun test && bun run build"
+    "check": "bun run typecheck && bun run build && bun test"
   },
   "devDependencies": {
     "@openchamber/sdk": "2.5.1",

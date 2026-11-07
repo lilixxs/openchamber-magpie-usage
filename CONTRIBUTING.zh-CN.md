@@ -12,6 +12,7 @@
 - OpenChamber 2.5.0 或更高版本。
 - 本仓库的检出。没有开发服务器、监听模式或发布脚本。
 - Bun 只用于构建已提交的产物：OpenChamber 不编译 TypeScript，安装时只读取磁盘上的 `panel/main.js` 与 `service/main.js`。
+- Node 22+ 必须在 `PATH` 上（本地测试前置）：`tests/service-bundle.test.ts` 用真实 Node 启动磁盘上的 `service/main.js`，找不到 Node 时该测试直接失败而不是跳过。CI 用 `actions/setup-node@v4` 提供 Node 22。宿主安装不需要系统级 Node——服务由宿主 runtime 启动；Bun 只是构建/测试工具，源码级服务测试仍在 Bun 下运行。
 
 ```bash
 bun install
@@ -30,6 +31,7 @@ bun run typecheck      # tsc --noEmit
 
 - `panel/main.js` 是 classic IIFE。沙箱 iframe 不能加载 ESM。
 - `service/main.js` 用 `--node` 构建；保留 ESM 与 Node 内置模块。
+- `jsonc-parser` 必须从 `jsonc-parser/lib/esm/main.js` 显式导入（见 `src/shared/config-document.ts`）。根导入在 Bun 的 `--node` 目标下会解析到 UMD 入口，把内部相对 `require('./impl/*')` 留在单文件产物里，宿主 Node 启动时报 `MODULE_NOT_FOUND`。构建成功不代表产物能在 Node 下运行；`tests/service-bundle.test.ts` 就是这条陷阱的回归测试。
 - 两个产物都要提交。改了源码却没有重建产物，视为未完成。
 - 构建脚本不创建输出目录。新增输出目录时，先提交其中的第一个产物，或在构建前手动建目录。
 - `bun run build` 只产出上面两个 JS 文件。`panel/index.html` 与 `panel/styles.css` 是静态包文件：`index.html` 链接样式表。它们不是构建产物。没有任何字体资产：样式表没有 `@font-face` 规则。
@@ -77,6 +79,7 @@ bun run typecheck      # tsc --noEmit
 - 首次打开：文件确实缺失且实例作用域的宿主存储标记 `openchamber-magpie-usage:v1:config-initialized` 不存在时，面板调用一次 `POST /config/create`，拿到完整的双语模板。标记已存在而文件后来被删除时，面板不会重建，配置卡改为显示创建按钮。
 - 那个标记是面板唯一存储的东西。没有 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，标记里也绝不放配置、路径、密钥、顺序或折叠状态。标记读写失败时，面板既不自动创建，也不当作首次安装；手动按钮照常可用。
 - 文件缺失时重排卡片是明确的例外：它会按当前顺序创建模板。
+- 面板读取 `/config` 失败（服务错误或结构异常）时，卡头显示 `config.status.unchecked`（`Unable to check`/「无法检查」，warning 色调）而不是文件 `invalid`；`config.loadFailed` 显示原因，不回显上游原文。失败优先于上一次的有效性：旧的 `Valid` 不会存活到证明它的失败之后，下一轮读取成功即恢复真实状态。usage/quotas 请求失败不会把有效配置变成 `Unable to check`；失败期间不写存储、不触发创建，也不用陈旧的 `missing` 报告发起创建。
 
 写入与恢复：
 
@@ -86,17 +89,19 @@ bun run typecheck      # tsc --noEmit
 - 结构损坏的文档（语法错误、重复顶层键、根不是对象）只在保存顺序时重建：完整模板 + 提交的顺序，再把旧原文逐行追加为带双语标记的 `//` 注释。不生成 `.bak`，也不删除旧备份。字段值错误不重建——只改 `cardOrder`。读不到、权限不足或非普通文件的路径绝不被覆盖，也绝不报成功。
 - 服务把 `{ at, restored, defaulted, previousText: 'appended-comments' }` 记在内存里直到重启；回报中绝不含旧原文，也绝不含任何由密钥推导出的内容。
 
-覆盖：`tests/config-document.test.ts`（检查、恢复、就地编辑）、`tests/service.test.ts`（`POST /config/create`、`POST /config/order`、`/config` 回报）、`tests/panel-host.test.ts`（卡片外壳与创建流程）。
+覆盖：`tests/config-document.test.ts`（检查、恢复、就地编辑）、`tests/service.test.ts`（`POST /config/create`、`POST /config/order`、`/config` 回报）、`tests/service-bundle.test.ts`（真实 Node 启动产物后的 `/config`、创建与顺序写盘）、`tests/panel-host.test.ts`（卡片外壳、创建流程与读取失败状态）。
 
 ## 测试
 
 ```bash
 bun test
 bun test tests/quotas.test.ts
-bun run check   # 类型检查 -> 全部测试 -> 构建
+bun run check   # 类型检查 -> 构建 -> 全部测试
 ```
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与 `src/service/server.ts` 服务模块之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 280 个通过的测试（13 个文件）。
+`bun run check` 的顺序由 `package.json` 固定为 typecheck → build → test：先构建再测试，让测试（尤其是产物测试）验证的是本次源码生成的产物。测试总数以本次 `bun run check` 输出为准，不再在文档里写死。
+
+测试全部离线：假网关、临时配置目录，以及测试客户端与 `src/service/server.ts` 服务模块之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。除 `tests/service-bundle.test.ts` 外，源码级服务测试在 Bun 下加载 `src/` 服务模块——它们加起来只覆盖源码/桥接与部分本地 HTTP，不证明磁盘上的 `service/main.js` 能在 Node 下启动。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 
@@ -113,19 +118,20 @@ git diff --exit-code -- panel/main.js service/main.js
 | `tests/i18n.test.ts` | 注册表合法性、键齐全、占位符一致、CLDR 复数类别（en 的 `one/other`、zh-CN 的 `other`）、插值/回退、`resolveLocale` 的精确匹配与 unsupported 标记；阿拉伯语 `test` 夹具是 RTL 但绝不是运行时匹配。 |
 | `tests/format.test.ts` | 数字/成本/积分/百分比/时间格式化，命中率分母为 0，窗口百分比回退链，金额行优先级。 |
 | `tests/quotas-view.test.ts` | pool 分组与分层折叠（Antigravity 3 行、9 个分层隐藏）、时长排序、无 pool 窗口共用一行、剩余口径金额行、余额拆分、最紧剩余、图标映射与兜底。 |
-| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`validity`、`recovery`、旧 `config.json` 被忽略、BOM 前缀文件保留端点/密钥）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语六字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、保留 BOM 与数组外注释、缺失时新建、原地重建且无 `.bak`、BOM 文件重建保留 BOM 并注释去 BOM 的旧正文、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。 |
+| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`validity`、`recovery`、旧 `config.json` 被忽略、BOM 前缀文件保留端点/密钥）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语六字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、保留 BOM 与数组外注释、缺失时新建、原地重建且无 `.bak`、BOM 文件重建保留 BOM 并注释去 BOM 的旧正文、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。全部在 Bun 下从 `src/` 加载服务模块。 |
+| `tests/service-bundle.test.ts` | 磁盘产物 `service/main.js` 的真实 Node 回归：把 bundle 复制到没有 `node_modules` 的隔离临时目录，用 `PATH` 上的真实 Node 子进程（绝不用 Bun 的 `process.execPath`）启动，覆盖 Bearer 鉴权、`/health` 契约、文件缺失回退、`POST /config/create` 的双语模板、`config.jsonc` 字段到达 `/config`、usage/quotas 经真实 HTTP 转发到假网关、`POST /config/order` 保存后保留注释与未知键且不回显密钥。仍解析 `./impl/*` 的 bundle 会在这里失败而不是只在宿主上失败。找不到 Node 时测试直接失败，不跳过。 |
 | `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符。 |
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
 | `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、不用 `localStorage`/`sessionStorage`/IndexedDB/cookie 且只用宿主实例存储保存首开标记（绝不存配置、路径、密钥、顺序或折叠状态）、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
-| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）。 |
+| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）；配置读取失败（`/config` 失败或结构异常时卡头显示 `Unable to check`/`无法检查` 而不是 `Invalid`/`Checking`，`config.loadFailed` 显示原因且不回显上游原文，下一轮读取成功后恢复真实有效性，usage/quotas 失败不会把有效配置变成 `Unable to check`，失败期间不写存储、不触发创建）。 |
 | `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
 | `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
 | `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |
 
 ## 验证
 
-本记录支撑 README 的行为与截图说明。2026-11-01 验证；该记录早于 `fontScale`、语言回退改动与 `config.jsonc` 切换。套件当前有 280 个通过的测试（13 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次 2026-11-01 的构建，已不能描述当前产物——产物后来为 JSONC 改动重建过：
+本记录支撑 README 的行为与截图说明。2026-11-01 验证；该记录早于 `fontScale`、语言回退改动与 `config.jsonc` 切换。套件的测试总数以本次 `bun run check` 输出为准（历史记录为 280 个/13 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次 2026-11-01 的构建，已不能描述当前产物——产物后来为 JSONC 改动重建过：
 
 - `bun run check` 全绿：类型检查、12 个文件共 211 个测试（0 失败、1,783 次断言）、两次构建。
 - 连续两次构建字节一致。SHA-256：
@@ -139,6 +145,8 @@ git diff --exit-code -- panel/main.js service/main.js
 - 拖拽第一张卡到第三位：`config.json` 写入 `cardOrder`，`baseUrl` 原样保留，重新打开面板顺序不变；键盘 `End` 移动生效，`aria-live` 播报「moved to position 12 of 12」。
 - 手工把 `config.json` 写成非法 JSON 后再拖一张卡：原文逐字复制到 `config.json.bak`，文件被重写为只含 `cardOrder` 的合法 JSON（2 空格缩进、结尾换行），配置卡显示 `config.json was invalid; saved as … and reset`。这一条记录的是 JSONC 之前的行为：当前代码会在原地重建 `config.jsonc`，把旧原文以 `//` 注释追加在同一个文件末尾，不生成 `.bak`，且该路径只有自动化测试覆盖。
 - 让写盘失败（配置路径被目录占用）：面板保留新顺序，配额标题旁出现 `order not saved`，提示里带服务给出的原因。
+- 2026-11-08 服务启动故障修复验证：`bun run check`（typecheck → build → test）全绿，293 个测试/14 个文件通过，两次构建字节一致；`tests/service-bundle.test.ts` 把 `service/main.js` 复制到无 `node_modules` 的隔离目录，由 `PATH` 上的真实 Node 启动，覆盖鉴权、`/health`、`/config`、`POST /config/create`、假网关 usage/quotas 转发与 `POST /config/order` 写盘。面板回归也覆盖异步初始化等待后重新检查配置新鲜度，以及手动创建成功后清除已解决的自动创建错误。
+- 同次修复还用临时目录中的服务产物在 Node 22.23.4 下连接真实环回 Magpie 网关（`127.0.0.1:3425`）：`/config`、用量、配额均返回 200，配额返回 14 张卡。未读取用户配置或使用真实密钥；这不等于验证了 OpenChamber 安装或侧栏外观。
 
 未验证：
 
@@ -148,6 +156,7 @@ git diff --exit-code -- panel/main.js service/main.js
 - 其他 magpie 版本的窗口命名与 `pool` 字段：折叠规则只认 `(High|Low|Medium)`，且只作用于有 pool 的窗口。
 - 上游 `kept=1` 在其他 magpie 版本下的语义；本机返回空列表。
 - 没有针对当前构建做过真实宿主安装：JSONC 文件、默认收起的配置卡、首开自动创建、复制路径按钮、409 `config-conflict` 路径与原地重建，都只由自动化测试（`tests/config-document.test.ts`、`tests/service.test.ts`、`tests/panel-host.test.ts`，配合 fake host、happy-dom 与本地真实 HTTP）覆盖。当前构建没有做过右侧栏像素检查。
+- 配置读取失败时的 `Unable to check`/「无法检查」状态、`config.loadFailed` 提示与成功重试恢复，只由 `tests/panel-host.test.ts` 的 fake host 覆盖；真实 Electron 宿主下尚未验证。
 - `docs/images/` 里的截图同样早于 `config.jsonc` 与默认收起的配置卡。
 - 跨进程写入竞态：写入在单个服务进程内串行，发布前会重读文件，但另一个进程在这次读取与 `rename` 之间写入的情况无法由测试套件排除。
 
@@ -158,6 +167,7 @@ git diff --exit-code -- panel/main.js service/main.js
 常用检查：
 
 - `bun test tests/service.test.ts` 检查服务契约。
+- `bun test tests/service-bundle.test.ts` 检查磁盘上的 `service/main.js` 能被真实 Node 启动（需要 `PATH` 中有 Node）。
 - `bun test tests/panel-host.test.ts` 检查面板到宿主的桥接。
 - `GET /health` 返回 `{ ok, name, apiVersion }`。服务只绑 `127.0.0.1`，要求 `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN`。如果必须探测运行中的服务，使用环境里的宿主 token；不要把 token 粘进 issue、日志或提交。
 - `GET /config` 回报 `configPath`、`baseUrl`、`host`、`loopback`、`language`、`languageInvalid`、`cardOrder`、`cardOrderInvalid`、`fontScale`、`fontScaleInvalid`、`refreshSeconds`、`recovery`、`source`、`present`、`validity`、`issue`、`issues`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。写路由是 `POST /config/create` 与 `POST /config/order`；其他方法/路径组合一律 405 或 404。
@@ -176,7 +186,7 @@ git diff --exit-code -- panel/main.js service/main.js
 3. 运行 `bun run check`。
 4. 提交 `package.json`、`panel/main.js` 与 `service/main.js`。
 
-仓库里没有发布脚本或部署步骤。CI（`.github/workflows/ci.yml`）在推送到 `main` 和拉取请求时运行：
+仓库里没有发布脚本或部署步骤。CI（`.github/workflows/ci.yml`）先用 `actions/setup-node@v4` 装 Node 22（产物测试需要真实 Node），再装 Bun 1.4.2，然后在推送到 `main` 和拉取请求时运行：
 
 ```text
 bun install --frozen-lockfile
