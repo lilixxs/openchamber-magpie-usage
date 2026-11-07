@@ -33,12 +33,16 @@ describe('panel bundle', () => {
     expect(bundle.includes('正在读取本地服务')).toBe(true);
   });
 
-  test('reads and writes no browser storage', () => {
+  test('uses only host instance storage, for the first-open marker', () => {
     for (const key of ['localStorage', 'sessionStorage', 'indexedDB', 'document.cookie']) {
       expect({ key, found: bundle.includes(key) }).toEqual({ key, found: false });
     }
-    // The host may offer storage; this panel does not ask for it.
-    expect(source.includes('host.storage')).toBe(false);
+    // The one approved exception: a versioned first-open marker in the host's
+    // instance storage. It must never carry the config, path, key, order, or fold state.
+    expect(source.includes('host.storage')).toBe(true);
+    expect(source.includes('INIT_MARKER_KEY')).toBe(true);
+    expect(source.includes("scope: 'instance'")).toBe(true);
+    expect(source).not.toContain('host.storage.set(INIT_MARKER_KEY, state.');
   });
 
   test('talks to the service through the host bridge only', () => {

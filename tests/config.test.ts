@@ -14,9 +14,9 @@ import {
   isLoopbackHostname,
   normaliseBaseUrl,
   parseCardOrder,
-  parseConfigText,
   type QuotaCard,
 } from '../src/shared/magpie.ts';
+import { parseConfigText } from '../src/shared/config-document.ts';
 import { commandCodeCards } from './fixtures.ts';
 
 const issueOf = (text: string): string | null => parseConfigText(text).config.issue?.message ?? null;

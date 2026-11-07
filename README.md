@@ -214,7 +214,7 @@ The body shows the full actual config file path — it wraps instead of being tr
 <td width="50%"><img src="docs/images/config-magpie.png" alt="Magpie desktop Settings, General: language menu open with System, English, Simplified Chinese, and Traditional Chinese" width="420"></td>
 </tr>
 <tr>
-<td><sub><b>OpenChamber</b>: the absolute path is irreversibly blacked out. Language is not a panel control; it is read from <code>config.json</code>.</sub></td>
+<td><sub><b>OpenChamber</b>: the absolute path is irreversibly blacked out. Language is not a panel control; it is read from <code>config.jsonc</code>.</sub></td>
 <td><sub><b>magpie desktop</b>: its own language control. The extension and Magpie read the same idea but keep separate settings.</sub></td>
 </tr>
 </table>
@@ -237,7 +237,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
 
 Without `XDG_CONFIG_HOME`, use `~/.config/openchamber-magpie-usage/config.jsonc`. Windows uses the same layout: `%USERPROFILE%\.config\openchamber-magpie-usage\config.jsonc`.
 
-The file is JSONC: `//` line comments and `/* */` block comments are allowed, trailing commas are not, duplicate top-level keys are rejected, and every syntax error is reported instead of tolerated. Unknown top-level keys are ignored by the parser and byte-preserved by a `cardOrder` edit. The old `config.json` is never read: if both files exist, only `config.jsonc` is used.
+The file is JSONC: `//` line comments and `/* */` block comments are allowed, trailing commas are not, duplicate top-level keys are rejected, and every syntax error is reported instead of tolerated. A single leading UTF-8 BOM is accepted and preserved when `cardOrder` is edited; a second leading BOM or a BOM anywhere else is still a syntax error. Unknown top-level keys are ignored by the parser and byte-preserved by a `cardOrder` edit. The old `config.json` is never read: if both files exist, only `config.jsonc` is used.
 
 ```jsonc
 {

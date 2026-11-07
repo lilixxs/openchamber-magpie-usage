@@ -1,3 +1,185 @@
+import { createRequire } from "node:module";
+var __create = Object.create;
+var __getProtoOf = Object.getPrototypeOf;
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+function __accessProp(key) {
+  return this[key];
+}
+var __toESMCache_node;
+var __toESMCache_esm;
+var __toESM = (mod, isNodeMode, target) => {
+  var canCache = mod != null && typeof mod === "object";
+  if (canCache) {
+    var cache = isNodeMode ? __toESMCache_node ??= new WeakMap : __toESMCache_esm ??= new WeakMap;
+    var cached = cache.get(mod);
+    if (cached)
+      return cached;
+  }
+  target = mod != null ? __create(__getProtoOf(mod)) : {};
+  const to = isNodeMode || !mod || !mod.__esModule || !__hasOwnProp.call(mod, "default") ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
+  if (mod && typeof mod === "object" || typeof mod === "function") {
+    for (let key of __getOwnPropNames(mod))
+      if (!__hasOwnProp.call(to, key))
+        __defProp(to, key, {
+          get: __accessProp.bind(mod, key),
+          enumerable: true
+        });
+  }
+  if (canCache)
+    cache.set(mod, to);
+  return to;
+};
+var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __require = /* @__PURE__ */ createRequire(import.meta.url);
+
+// node_modules/jsonc-parser/lib/umd/main.js
+var require_main = __commonJS(function(exports, module) {
+  (function(factory) {
+    if (typeof module === "object" && typeof module.exports === "object") {
+      var v = factory(__require, exports);
+      if (v !== undefined)
+        module.exports = v;
+    } else if (typeof define === "function" && define.amd) {
+      define(["require", "exports", "./impl/format", "./impl/edit", "./impl/scanner", "./impl/parser"], factory);
+    }
+  })(function(require2, exports2) {
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.applyEdits = exports2.modify = exports2.format = exports2.printParseErrorCode = exports2.ParseErrorCode = exports2.stripComments = exports2.visit = exports2.getNodeValue = exports2.getNodePath = exports2.findNodeAtOffset = exports2.findNodeAtLocation = exports2.parseTree = exports2.parse = exports2.getLocation = exports2.SyntaxKind = exports2.ScanError = exports2.createScanner = undefined;
+    const formatter = require2("./impl/format");
+    const edit = require2("./impl/edit");
+    const scanner = require2("./impl/scanner");
+    const parser = require2("./impl/parser");
+    exports2.createScanner = scanner.createScanner;
+    var ScanError;
+    (function(ScanError) {
+      ScanError[ScanError["None"] = 0] = "None";
+      ScanError[ScanError["UnexpectedEndOfComment"] = 1] = "UnexpectedEndOfComment";
+      ScanError[ScanError["UnexpectedEndOfString"] = 2] = "UnexpectedEndOfString";
+      ScanError[ScanError["UnexpectedEndOfNumber"] = 3] = "UnexpectedEndOfNumber";
+      ScanError[ScanError["InvalidUnicode"] = 4] = "InvalidUnicode";
+      ScanError[ScanError["InvalidEscapeCharacter"] = 5] = "InvalidEscapeCharacter";
+      ScanError[ScanError["InvalidCharacter"] = 6] = "InvalidCharacter";
+    })(ScanError || (exports2.ScanError = ScanError = {}));
+    var SyntaxKind;
+    (function(SyntaxKind) {
+      SyntaxKind[SyntaxKind["OpenBraceToken"] = 1] = "OpenBraceToken";
+      SyntaxKind[SyntaxKind["CloseBraceToken"] = 2] = "CloseBraceToken";
+      SyntaxKind[SyntaxKind["OpenBracketToken"] = 3] = "OpenBracketToken";
+      SyntaxKind[SyntaxKind["CloseBracketToken"] = 4] = "CloseBracketToken";
+      SyntaxKind[SyntaxKind["CommaToken"] = 5] = "CommaToken";
+      SyntaxKind[SyntaxKind["ColonToken"] = 6] = "ColonToken";
+      SyntaxKind[SyntaxKind["NullKeyword"] = 7] = "NullKeyword";
+      SyntaxKind[SyntaxKind["TrueKeyword"] = 8] = "TrueKeyword";
+      SyntaxKind[SyntaxKind["FalseKeyword"] = 9] = "FalseKeyword";
+      SyntaxKind[SyntaxKind["StringLiteral"] = 10] = "StringLiteral";
+      SyntaxKind[SyntaxKind["NumericLiteral"] = 11] = "NumericLiteral";
+      SyntaxKind[SyntaxKind["LineCommentTrivia"] = 12] = "LineCommentTrivia";
+      SyntaxKind[SyntaxKind["BlockCommentTrivia"] = 13] = "BlockCommentTrivia";
+      SyntaxKind[SyntaxKind["LineBreakTrivia"] = 14] = "LineBreakTrivia";
+      SyntaxKind[SyntaxKind["Trivia"] = 15] = "Trivia";
+      SyntaxKind[SyntaxKind["Unknown"] = 16] = "Unknown";
+      SyntaxKind[SyntaxKind["EOF"] = 17] = "EOF";
+    })(SyntaxKind || (exports2.SyntaxKind = SyntaxKind = {}));
+    exports2.getLocation = parser.getLocation;
+    exports2.parse = parser.parse;
+    exports2.parseTree = parser.parseTree;
+    exports2.findNodeAtLocation = parser.findNodeAtLocation;
+    exports2.findNodeAtOffset = parser.findNodeAtOffset;
+    exports2.getNodePath = parser.getNodePath;
+    exports2.getNodeValue = parser.getNodeValue;
+    exports2.visit = parser.visit;
+    exports2.stripComments = parser.stripComments;
+    var ParseErrorCode;
+    (function(ParseErrorCode) {
+      ParseErrorCode[ParseErrorCode["InvalidSymbol"] = 1] = "InvalidSymbol";
+      ParseErrorCode[ParseErrorCode["InvalidNumberFormat"] = 2] = "InvalidNumberFormat";
+      ParseErrorCode[ParseErrorCode["PropertyNameExpected"] = 3] = "PropertyNameExpected";
+      ParseErrorCode[ParseErrorCode["ValueExpected"] = 4] = "ValueExpected";
+      ParseErrorCode[ParseErrorCode["ColonExpected"] = 5] = "ColonExpected";
+      ParseErrorCode[ParseErrorCode["CommaExpected"] = 6] = "CommaExpected";
+      ParseErrorCode[ParseErrorCode["CloseBraceExpected"] = 7] = "CloseBraceExpected";
+      ParseErrorCode[ParseErrorCode["CloseBracketExpected"] = 8] = "CloseBracketExpected";
+      ParseErrorCode[ParseErrorCode["EndOfFileExpected"] = 9] = "EndOfFileExpected";
+      ParseErrorCode[ParseErrorCode["InvalidCommentToken"] = 10] = "InvalidCommentToken";
+      ParseErrorCode[ParseErrorCode["UnexpectedEndOfComment"] = 11] = "UnexpectedEndOfComment";
+      ParseErrorCode[ParseErrorCode["UnexpectedEndOfString"] = 12] = "UnexpectedEndOfString";
+      ParseErrorCode[ParseErrorCode["UnexpectedEndOfNumber"] = 13] = "UnexpectedEndOfNumber";
+      ParseErrorCode[ParseErrorCode["InvalidUnicode"] = 14] = "InvalidUnicode";
+      ParseErrorCode[ParseErrorCode["InvalidEscapeCharacter"] = 15] = "InvalidEscapeCharacter";
+      ParseErrorCode[ParseErrorCode["InvalidCharacter"] = 16] = "InvalidCharacter";
+    })(ParseErrorCode || (exports2.ParseErrorCode = ParseErrorCode = {}));
+    function printParseErrorCode(code) {
+      switch (code) {
+        case 1:
+          return "InvalidSymbol";
+        case 2:
+          return "InvalidNumberFormat";
+        case 3:
+          return "PropertyNameExpected";
+        case 4:
+          return "ValueExpected";
+        case 5:
+          return "ColonExpected";
+        case 6:
+          return "CommaExpected";
+        case 7:
+          return "CloseBraceExpected";
+        case 8:
+          return "CloseBracketExpected";
+        case 9:
+          return "EndOfFileExpected";
+        case 10:
+          return "InvalidCommentToken";
+        case 11:
+          return "UnexpectedEndOfComment";
+        case 12:
+          return "UnexpectedEndOfString";
+        case 13:
+          return "UnexpectedEndOfNumber";
+        case 14:
+          return "InvalidUnicode";
+        case 15:
+          return "InvalidEscapeCharacter";
+        case 16:
+          return "InvalidCharacter";
+      }
+      return "<unknown ParseErrorCode>";
+    }
+    exports2.printParseErrorCode = printParseErrorCode;
+    function format(documentText, range, options) {
+      return formatter.format(documentText, range, options);
+    }
+    exports2.format = format;
+    function modify(text, path, value, options) {
+      return edit.setProperty(text, path, value, options);
+    }
+    exports2.modify = modify;
+    function applyEdits(text, edits) {
+      let sortedEdits = edits.slice(0).sort((a, b) => {
+        const diff = a.offset - b.offset;
+        if (diff === 0) {
+          return a.length - b.length;
+        }
+        return diff;
+      });
+      let lastModifiedOffset = text.length;
+      for (let i = sortedEdits.length - 1;i >= 0; i--) {
+        let e = sortedEdits[i];
+        if (e.offset + e.length <= lastModifiedOffset) {
+          text = edit.applyEdit(text, e);
+        } else {
+          throw new Error("Overlapping edit");
+        }
+        lastModifiedOffset = e.offset;
+      }
+      return text;
+    }
+    exports2.applyEdits = applyEdits;
+  });
+});
+
 // src/service/server.ts
 import { createServer } from "node:http";
 
@@ -10,7 +192,7 @@ var DEFAULT_FONT_SCALE = 100;
 var MIN_FONT_SCALE = 50;
 var MAX_FONT_SCALE = 200;
 var CONFIG_DIR_NAME = "openchamber-magpie-usage";
-var CONFIG_FILE_NAME = "config.json";
+var CONFIG_FILE_NAME = "config.jsonc";
 var CONFIG_RELATIVE_PATH = `~/.config/${CONFIG_DIR_NAME}/${CONFIG_FILE_NAME}`;
 var PERIODS = ["today", "7d", "30d"];
 var isPeriod = (value) => typeof value === "string" && PERIODS.includes(value);
@@ -26,11 +208,14 @@ var fallbackConfig = () => ({
   fontScale: DEFAULT_FONT_SCALE,
   fontScaleInvalid: false,
   cardOrder: [],
+  cardOrderInvalid: false,
   language: DEFAULT_LANGUAGE,
   languageInvalid: false,
   source: "default",
   present: false,
-  issue: null
+  validity: "missing",
+  issue: null,
+  issues: []
 });
 var LOOPBACK_V4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 var isLoopbackHostname = (hostname) => hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || LOOPBACK_V4.test(hostname);
@@ -64,20 +249,69 @@ var normaliseBaseUrl = (raw) => {
 };
 var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var isControlOrSpace = /[\s\u0000-\u001f\u007f]/;
-var parseCardOrder = (value) => {
-  if (!Array.isArray(value))
-    return [];
+var parseApiKeyValue = (raw) => {
+  if (raw === undefined || raw === null)
+    return { ok: true, value: null };
+  if (typeof raw !== "string")
+    return { ok: false, message: "apiKey must be a string." };
+  const key = raw.trim();
+  if (key === "")
+    return { ok: false, message: "apiKey is empty; remove the field instead." };
+  if (key.length > 4096)
+    return { ok: false, message: "apiKey is longer than 4096 characters." };
+  if (isControlOrSpace.test(key)) {
+    return { ok: false, message: "apiKey must not contain whitespace or control characters." };
+  }
+  return { ok: true, value: key };
+};
+var parseRefreshSecondsValue = (raw) => {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw)) {
+    return { ok: false, message: "refreshSeconds must be an integer." };
+  }
+  if (raw < MIN_REFRESH_SECONDS || raw > MAX_REFRESH_SECONDS) {
+    return {
+      ok: false,
+      message: `refreshSeconds must be between ${MIN_REFRESH_SECONDS} and ${MAX_REFRESH_SECONDS}.`
+    };
+  }
+  return { ok: true, value: raw };
+};
+var parseFontScaleValue = (raw) => {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw) || raw < MIN_FONT_SCALE || raw > MAX_FONT_SCALE) {
+    return { ok: false, message: `fontScale must be an integer from ${MIN_FONT_SCALE} to ${MAX_FONT_SCALE}.` };
+  }
+  return { ok: true, value: raw };
+};
+var parseLanguageValue = (raw) => {
+  if (typeof raw !== "string" || raw === "") {
+    return { ok: false, message: "language must be a non-empty string." };
+  }
+  return { ok: true, value: raw };
+};
+var parseCardOrderDetailed = (value) => {
+  if (value === undefined)
+    return { order: [], invalid: false, message: null };
+  if (!Array.isArray(value)) {
+    return { order: [], invalid: true, message: "cardOrder must be an array of strings." };
+  }
   const order = [];
+  let invalid = false;
   for (const entry of value) {
-    if (order.length >= MAX_CARD_ORDER)
+    if (order.length >= MAX_CARD_ORDER) {
+      invalid = true;
       break;
-    if (typeof entry !== "string")
+    }
+    if (typeof entry !== "string" || entry.length === 0 || entry.length > MAX_CARD_ORDER_KEY) {
+      invalid = true;
       continue;
-    if (entry.length === 0 || entry.length > MAX_CARD_ORDER_KEY)
-      continue;
+    }
     order.push(entry);
   }
-  return order;
+  return {
+    order,
+    invalid,
+    message: invalid ? `cardOrder entries must be non-empty strings of at most ${MAX_CARD_ORDER_KEY} characters; bad entries were dropped.` : null
+  };
 };
 var parseConfigObject = (value) => {
   let baseUrl = DEFAULT_BASE_URL;
@@ -85,114 +319,73 @@ var parseConfigObject = (value) => {
   let loopback = true;
   if (value.baseUrl !== undefined) {
     if (typeof value.baseUrl !== "string")
-      return { ok: false, message: "baseUrl must be a string." };
+      return { ok: false, field: "baseUrl", message: "baseUrl must be a string." };
     const parsed = normaliseBaseUrl(value.baseUrl);
     if (!parsed.ok)
-      return { ok: false, message: parsed.message };
+      return { ok: false, field: "baseUrl", message: parsed.message };
     baseUrl = parsed.baseUrl;
     host = parsed.host;
     loopback = parsed.loopback;
   }
-  let apiKey = null;
-  if (value.apiKey !== undefined && value.apiKey !== null) {
-    if (typeof value.apiKey !== "string")
-      return { ok: false, message: "apiKey must be a string." };
-    const key = value.apiKey.trim();
-    if (key === "")
-      return { ok: false, message: "apiKey is empty; remove the field instead." };
-    if (key.length > 4096)
-      return { ok: false, message: "apiKey is longer than 4096 characters." };
-    if (isControlOrSpace.test(key))
-      return { ok: false, message: "apiKey must not contain whitespace or control characters." };
-    apiKey = key;
-  }
+  const apiKeyResult = parseApiKeyValue(value.apiKey);
+  if (!apiKeyResult.ok)
+    return { ok: false, field: "apiKey", message: apiKeyResult.message };
   let refreshSeconds = DEFAULT_REFRESH_SECONDS;
   if (value.refreshSeconds !== undefined) {
-    const raw = value.refreshSeconds;
-    if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw)) {
-      return { ok: false, message: "refreshSeconds must be an integer." };
-    }
-    if (raw < MIN_REFRESH_SECONDS || raw > MAX_REFRESH_SECONDS) {
-      return {
-        ok: false,
-        message: `refreshSeconds must be between ${MIN_REFRESH_SECONDS} and ${MAX_REFRESH_SECONDS}.`
-      };
-    }
-    refreshSeconds = raw;
+    const parsed = parseRefreshSecondsValue(value.refreshSeconds);
+    if (!parsed.ok)
+      return { ok: false, field: "refreshSeconds", message: parsed.message };
+    refreshSeconds = parsed.value;
   }
+  const issues = [];
   let fontScale = DEFAULT_FONT_SCALE;
   let fontScaleInvalid = false;
   if (value.fontScale !== undefined) {
-    const raw = value.fontScale;
-    if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw) || raw < MIN_FONT_SCALE || raw > MAX_FONT_SCALE) {
-      fontScaleInvalid = true;
+    const parsed = parseFontScaleValue(value.fontScale);
+    if (parsed.ok) {
+      fontScale = parsed.value;
     } else {
-      fontScale = raw;
+      fontScaleInvalid = true;
+      issues.push({ field: "fontScale", kind: "invalid", message: parsed.message });
     }
   }
   let language = DEFAULT_LANGUAGE;
   let languageInvalid = false;
   if (value.language !== undefined) {
-    if (typeof value.language === "string" && value.language !== "")
-      language = value.language;
-    else
+    const parsed = parseLanguageValue(value.language);
+    if (parsed.ok)
+      language = parsed.value;
+    else {
       languageInvalid = true;
+      issues.push({ field: "language", kind: "invalid", message: parsed.message });
+    }
+  }
+  const cardOrder = parseCardOrderDetailed(value.cardOrder);
+  if (cardOrder.invalid) {
+    issues.push({ field: "cardOrder", kind: "invalid", message: cardOrder.message ?? "cardOrder is invalid." });
   }
   return {
     ok: true,
+    issues,
     config: {
       baseUrl,
       host,
       loopback,
-      apiKey,
+      apiKey: apiKeyResult.value,
       refreshSeconds,
       fontScale,
       fontScaleInvalid,
-      cardOrder: parseCardOrder(value.cardOrder),
+      cardOrder: cardOrder.order,
+      cardOrderInvalid: cardOrder.invalid,
       language,
       languageInvalid,
       source: "file",
       present: true,
-      issue: null
+      validity: issues.length === 0 ? "valid" : "invalid",
+      issue: null,
+      issues
     }
   };
-};
-var parseConfigText = (text) => {
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return {
-      config: {
-        ...fallbackConfig(),
-        present: true,
-        source: "file",
-        issue: { kind: "invalid-json", message: "The config file is not valid JSON." }
-      }
-    };
-  }
-  if (!isRecord(value)) {
-    return {
-      config: {
-        ...fallbackConfig(),
-        present: true,
-        source: "file",
-        issue: { kind: "invalid", message: "The config file must hold a JSON object." }
-      }
-    };
-  }
-  const parsed = parseConfigObject(value);
-  if (!parsed.ok) {
-    return {
-      config: {
-        ...fallbackConfig(),
-        present: true,
-        source: "file",
-        issue: { kind: "invalid", message: parsed.message }
-      }
-    };
-  }
-  return { config: parsed.config };
 };
 var finite = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
 var count = (value) => finite(value) ?? 0;
@@ -286,7 +479,7 @@ var readCard = (value) => {
   const name = text(value.name) ?? provider;
   return {
     provider,
-    name: name ?? "Unnamed card",
+    name: name ?? "",
     kind: text(value.kind),
     plan: text(value.plan),
     user: text(value.user),
@@ -315,6 +508,8 @@ var describeServiceError = (kind) => {
   switch (kind) {
     case "bad-request":
       return "The panel asked for something the service does not serve.";
+    case "config-conflict":
+      return "The config file changed on disk. Nothing was overwritten; retry.";
     case "internal":
       return "The local service failed to build an answer.";
     case "upstream-unauthorized":
@@ -339,60 +534,273 @@ var describeServiceError = (kind) => {
 };
 
 // src/service/config.ts
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+// src/shared/config-document.ts
+var import_jsonc_parser = __toESM(require_main(), 1);
+var JSONC_PARSE_OPTIONS = {
+  allowTrailingComma: false,
+  disallowComments: false,
+  allowEmptyContent: false
+};
+var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var splitLeadingBom = (text) => text.startsWith("\uFEFF") ? { body: text.slice(1), bom: true } : { body: text, bom: false };
+var topLevelPropertyCounts = (root) => {
+  const counts = new Map;
+  if (root.type !== "object" || !root.children)
+    return counts;
+  for (const child of root.children) {
+    if (child.type !== "property")
+      continue;
+    const key = child.children?.[0]?.value;
+    if (typeof key !== "string")
+      continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+};
+var inspectConfigDocument = (text) => {
+  const { body } = splitLeadingBom(text);
+  const errors = [];
+  const value = import_jsonc_parser.parse(body, errors, JSONC_PARSE_OPTIONS);
+  if (errors.length > 0) {
+    const codes = [...new Set(errors.map((error) => import_jsonc_parser.printParseErrorCode(error.error)))];
+    return { state: "syntax", errors: codes };
+  }
+  if (!isRecord2(value))
+    return { state: "non-object" };
+  const tree = import_jsonc_parser.parseTree(body, [], JSONC_PARSE_OPTIONS);
+  if (tree) {
+    const keys = [...topLevelPropertyCounts(tree)].filter(([, count]) => count > 1).map(([key]) => key).sort();
+    if (keys.length > 0)
+      return { state: "duplicate", keys };
+  }
+  return { state: "ok", value };
+};
+var invalidConfig = (issue, message) => ({
+  config: {
+    ...fallbackConfig(),
+    present: true,
+    source: "file",
+    validity: "invalid",
+    issue: { kind: issue.kind, message },
+    issues: [issue]
+  }
+});
+var parseConfigText = (text) => {
+  const inspection = inspectConfigDocument(text);
+  if (inspection.state === "syntax") {
+    const detail = inspection.errors.length > 0 ? ` (${inspection.errors.join(", ")})` : "";
+    const message = `The config file is not valid JSONC${detail}.`;
+    return invalidConfig({ field: "document", kind: "invalid-json", message }, message);
+  }
+  if (inspection.state === "duplicate") {
+    const message = `The config file repeats top-level keys: ${inspection.keys.join(", ")}.`;
+    return invalidConfig({ field: "document", kind: "duplicate-key", message }, message);
+  }
+  if (inspection.state === "non-object") {
+    const message = "The config file must hold a JSON object.";
+    return invalidConfig({ field: "document", kind: "invalid", message }, message);
+  }
+  const parsed = parseConfigObject(inspection.value);
+  if (!parsed.ok) {
+    return invalidConfig({ field: parsed.field, kind: "invalid", message: parsed.message }, parsed.message);
+  }
+  return { config: parsed.config };
+};
+var RECOVERABLE_FIELDS = [
+  "baseUrl",
+  "apiKey",
+  "refreshSeconds",
+  "fontScale",
+  "language"
+];
+var allDefaulted = () => ({
+  values: {
+    baseUrl: DEFAULT_BASE_URL,
+    apiKey: null,
+    refreshSeconds: DEFAULT_REFRESH_SECONDS,
+    fontScale: DEFAULT_FONT_SCALE,
+    language: DEFAULT_LANGUAGE
+  },
+  restored: [],
+  defaulted: [...RECOVERABLE_FIELDS]
+});
+var recoverConfigValues = (text) => {
+  const { body } = splitLeadingBom(text);
+  const tree = import_jsonc_parser.parseTree(body, [], JSONC_PARSE_OPTIONS);
+  if (!tree || tree.type !== "object")
+    return allDefaulted();
+  const properties = new Map;
+  for (const child of tree.children ?? []) {
+    if (child.type !== "property")
+      continue;
+    const key = child.children?.[0]?.value;
+    if (typeof key !== "string")
+      continue;
+    const list = properties.get(key) ?? [];
+    list.push(child);
+    properties.set(key, list);
+  }
+  const uniqueProperty = (key) => {
+    const nodes = properties.get(key);
+    return nodes && nodes.length === 1 ? nodes[0] ?? null : null;
+  };
+  const provableValue = (key) => {
+    const property = uniqueProperty(key);
+    if (!property)
+      return;
+    const valueNode = property.children?.[1];
+    if (!valueNode || valueNode.length <= 0)
+      return;
+    const slice = body.slice(valueNode.offset, valueNode.offset + valueNode.length);
+    if (slice.trim() === "")
+      return;
+    const errors = [];
+    const value = import_jsonc_parser.parse(slice, errors, JSONC_PARSE_OPTIONS);
+    return errors.length === 0 ? value : undefined;
+  };
+  const has = (key) => (properties.get(key)?.length ?? 0) > 0;
+  const result = allDefaulted();
+  const restored = new Set;
+  const defaulted = new Set;
+  const groupDuplicated = (properties.get("baseUrl")?.length ?? 0) > 1 || (properties.get("apiKey")?.length ?? 0) > 1;
+  if (groupDuplicated) {
+    defaulted.add("baseUrl");
+    defaulted.add("apiKey");
+  } else {
+    const rawBase = provableValue("baseUrl");
+    const rawKey = provableValue("apiKey");
+    const basePresent = has("baseUrl");
+    const keyPresent = has("apiKey");
+    if (basePresent && typeof rawBase === "string") {
+      const endpoint = normaliseBaseUrl(rawBase);
+      if (endpoint.ok) {
+        result.values.baseUrl = endpoint.baseUrl;
+        restored.add("baseUrl");
+        if (!keyPresent) {
+          defaulted.add("apiKey");
+        } else {
+          const parsedKey = parseApiKeyValue(rawKey);
+          if (parsedKey.ok && parsedKey.value !== null) {
+            result.values.apiKey = parsedKey.value;
+            restored.add("apiKey");
+          } else {
+            defaulted.add("apiKey");
+          }
+        }
+      } else {
+        defaulted.add("baseUrl");
+        defaulted.add("apiKey");
+      }
+    } else {
+      defaulted.add("baseUrl");
+      defaulted.add("apiKey");
+    }
+  }
+  const scalar = (key, parseValue, accept, assign) => {
+    if (!has(key)) {
+      defaulted.add(key);
+      return;
+    }
+    const raw = provableValue(key);
+    if (raw === undefined) {
+      defaulted.add(key);
+      return;
+    }
+    const parsed = parseValue(raw);
+    if (!parsed.ok || !accept(parsed.value)) {
+      defaulted.add(key);
+      return;
+    }
+    assign(parsed.value);
+    restored.add(key);
+  };
+  scalar("refreshSeconds", parseRefreshSecondsValue, () => true, (value) => {
+    result.values.refreshSeconds = value;
+  });
+  scalar("fontScale", parseFontScaleValue, () => true, (value) => {
+    result.values.fontScale = value;
+  });
+  scalar("language", parseLanguageValue, (value) => value === "auto" || value === "en" || value === "zh-CN", (value) => {
+    result.values.language = value;
+  });
+  result.restored = RECOVERABLE_FIELDS.filter((field) => restored.has(field));
+  result.defaulted = RECOVERABLE_FIELDS.filter((field) => defaulted.has(field));
+  return result;
+};
+var setCardOrderText = (text, order) => {
+  const { body, bom } = splitLeadingBom(text);
+  const inspection = inspectConfigDocument(body);
+  if (inspection.state !== "ok")
+    return null;
+  const tree = import_jsonc_parser.parseTree(body, [], JSONC_PARSE_OPTIONS);
+  if (!tree || tree.type !== "object")
+    return null;
+  const eol = body.includes(`\r
+`) ? `\r
+` : `
+`;
+  const indentMatch = /^([ \t]+)"/m.exec(body);
+  const indent = indentMatch?.[1];
+  const insertSpaces = indent ? !indent.includes("\t") : true;
+  const unit = insertSpaces ? " ".repeat(indent?.length ?? 2) : "\t";
+  const propertyIndent = (node) => {
+    const lineStart = body.lastIndexOf(`
+`, node.offset - 1) + 1;
+    return /^[ \t]*/.exec(body.slice(lineStart, node.offset))?.[0] ?? "";
+  };
+  const arrayText = (propertyIndentText) => {
+    if (order.length === 0)
+      return "[]";
+    const childIndent = propertyIndentText + unit;
+    const items = order.map((key) => `${childIndent}${JSON.stringify(key)}`).join(`,${eol}`);
+    return `[${eol}${items}${eol}${propertyIndentText}]`;
+  };
+  const valueNode = import_jsonc_parser.findNodeAtLocation(tree, ["cardOrder"]);
+  if (valueNode) {
+    const parent = valueNode.parent;
+    const indentText = parent && parent.type === "property" ? propertyIndent(parent) : unit;
+    const next = body.slice(0, valueNode.offset) + arrayText(indentText || unit) + body.slice(valueNode.offset + valueNode.length);
+    return bom ? `\uFEFF${next}` : next;
+  }
+  const properties = (tree.children ?? []).filter((child) => child.type === "property");
+  const last = properties[properties.length - 1];
+  const indentText = last ? propertyIndent(last) || unit : unit;
+  const anchor = last ? last.offset + last.length : tree.offset + 1;
+  const prefix = last ? `,${eol}` : eol;
+  const tail = body.slice(anchor);
+  const tailStartsWithBreak = /^[ \t]*\r?\n/.test(tail);
+  const insertion = `${prefix}${indentText}"cardOrder": ${arrayText(indentText)}${tailStartsWithBreak ? "" : eol}`;
+  const next = body.slice(0, anchor) + insertion + tail;
+  return bom ? `\uFEFF${next}` : next;
+};
+
+// src/service/config.ts
 var defaultConfigPath = () => {
   const xdg = process.env.XDG_CONFIG_HOME?.trim();
   const base = xdg && xdg !== "" ? xdg : join(homedir(), ".config");
   return join(base, CONFIG_DIR_NAME, CONFIG_FILE_NAME);
 };
-var fallbackWithIssue = (present, kind, message) => ({
-  ...fallbackConfig(),
-  present,
-  issue: { kind, message }
-});
-var readConfig = async (path) => {
-  let text;
+var readConfigFile = async (path) => {
+  let info;
   try {
-    text = await readFile(path, "utf8");
-  } catch (error) {
-    const code = error.code;
-    if (code === "ENOENT") {
-      return { config: fallbackConfig(), path };
-    }
-    return {
-      config: fallbackWithIssue(false, "unreadable", `The config file could not be read (${code ?? "unknown error"}).`),
-      path
-    };
-  }
-  return { config: parseConfigText(text).config, path };
-};
-
-// src/service/config-write.ts
-import { randomBytes } from "node:crypto";
-import { chmod, copyFile, mkdir, readFile as readFile2, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var readRawConfig = async (path) => {
-  let text;
-  try {
-    text = await readFile2(path, "utf8");
+    info = await lstat(path);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT")
       return { kind: "missing" };
-    throw error;
+    return { kind: "unreadable", code: code ?? null };
   }
-  let value;
+  if (!info.isFile())
+    return { kind: "not-regular" };
   try {
-    value = JSON.parse(text);
-  } catch {
-    return { kind: "invalid", text };
+    return { kind: "ok", text: await readFile(path, "utf8") };
+  } catch (error) {
+    return { kind: "unreadable", code: error.code ?? null };
   }
-  if (!isRecord2(value))
-    return { kind: "invalid", text };
-  return { kind: "ok", value };
 };
 var modeOf = async (path) => {
   try {
@@ -403,67 +811,257 @@ var modeOf = async (path) => {
     return 384;
   }
 };
-var backup = async (path) => {
-  const candidates = [`${path}.bak`, `${path}.bak-${stamp(new Date)}`, `${path}.bak-${stamp(new Date)}-${randomBytes(3).toString("hex")}`];
-  for (const candidate of candidates) {
-    try {
-      await stat(candidate);
-    } catch (error) {
-      if (error.code !== "ENOENT")
-        throw error;
-      await copyFile(path, candidate);
-      return candidate;
-    }
+var unreadable = (present, message) => ({
+  ...fallbackConfig(),
+  present,
+  validity: "unreadable",
+  issue: { kind: "unreadable", message },
+  issues: [{ field: "document", kind: "unreadable", message }]
+});
+var readConfig = async (path) => {
+  const file = await readConfigFile(path);
+  if (file.kind === "missing") {
+    return { config: fallbackConfig(), path };
   }
-  await copyFile(path, candidates[candidates.length - 1]);
-  return candidates[candidates.length - 1];
+  if (file.kind === "not-regular") {
+    return {
+      config: unreadable(false, "The config path is not a regular file."),
+      path
+    };
+  }
+  if (file.kind === "unreadable") {
+    return {
+      config: unreadable(false, `The config file could not be read (${file.code ?? "unknown error"}).`),
+      path
+    };
+  }
+  return { config: parseConfigText(file.text).config, path };
 };
-var stamp = (date) => date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-var writeAtomic = async (path, text, mode) => {
+
+// src/service/config-write.ts
+import { randomBytes } from "node:crypto";
+import { chmod, link, mkdir, open, readFile as readFile2, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
+// src/service/config-template.ts
+var TEMPLATE_DEFAULTS = {
+  baseUrl: "http://127.0.0.1:3425",
+  apiKey: null,
+  refreshSeconds: 60,
+  fontScale: 100,
+  language: "auto"
+};
+var orderBlock = (order) => JSON.stringify(order, null, 2).split(`
+`).map((line, index) => index === 0 ? line : `  ${line}`).join(`
+`);
+var renderConfigTemplate = (order = [], values = TEMPLATE_DEFAULTS) => {
+  const key = values.apiKey === null ? "null" : JSON.stringify(values.apiKey);
+  return [
+    "{",
+    "  // baseUrl: absolute http(s) URL of the magpie gateway. Plain http is accepted only for a loopback host.",
+    "  // baseUrl：magpie 网关的绝对 http(s) URL；仅环回地址允许使用明文 http。",
+    `  "baseUrl": ${JSON.stringify(values.baseUrl)},`,
+    "",
+    "  // apiKey: the gateway key. Only the local service reads it; the panel never displays it.",
+    "  // apiKey：网关密钥。只由本地服务读取，面板不会显示。",
+    '  // Example / 示例: "apiKey": "replace-with-your-gateway-key"',
+    `  "apiKey": ${key},`,
+    "",
+    "  // refreshSeconds: integer from 5 to 3600.",
+    "  // refreshSeconds：5 到 3600 的整数。",
+    `  "refreshSeconds": ${values.refreshSeconds},`,
+    "",
+    "  // fontScale: integer from 50 to 200, the panel's type scale in percent.",
+    "  // fontScale：50 到 200 的整数，面板字号百分比。",
+    `  "fontScale": ${values.fontScale},`,
+    "",
+    "  // cardOrder is managed by the panel's drag and keyboard reordering. The whole array",
+    "  // is replaced on save, so comments inside the array may be dropped.",
+    "  // cardOrder 由面板拖拽与键盘排序管理；保存时整个数组会被替换，数组内注释可能丢失。",
+    `  "cardOrder": ${orderBlock(order)},`,
+    "",
+    '  // language: "auto", "en", or "zh-CN".',
+    '  // language："auto"、"en" 或 "zh-CN"。',
+    `  "language": ${JSON.stringify(values.language)}`,
+    "}",
+    ""
+  ].join(`
+`);
+};
+var commentPreviousText = (text) => {
+  const lines = text.split(/\r\n|\n|\r/);
+  if (lines.length > 1 && lines[lines.length - 1] === "")
+    lines.pop();
+  return lines.map((line) => line === "" ? "//" : `// ${line}`).join(`
+`);
+};
+var renderRebuiltConfig = (previousText, order, values, at) => {
+  const active = renderConfigTemplate(order, values);
+  const marker = [
+    "// --- Previous config text, kept as comments / 旧配置原文（保留为注释）---",
+    `// Rebuilt on ${at} after a syntax, duplicate-key, or root-shape error.`,
+    `// 因语法、重复键或根结构错误，已于 ${at} 重建。`,
+    "// The active settings above are the template defaults plus any field that could be",
+    "// proved complete in the old text; everything else fell back to its default.",
+    "// 上方生效值是模板默认值加上旧文中可证明完整的字段；其余字段已回退默认。",
+    ""
+  ].join(`
+`);
+  return `${active}
+${marker}${commentPreviousText(previousText)}
+`;
+};
+var recoveryReport = (at, recovered) => ({
+  at,
+  restored: recovered.restored,
+  defaulted: recovered.defaulted,
+  previousText: "appended-comments"
+});
+
+// src/service/config-write.ts
+class ConfigWriteError extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "ConfigWriteError";
+    this.code = code;
+  }
+}
+var isCode = (error, code) => error.code === code;
+var tempName = (path) => `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+var writeAtomic = async (path, text, mode, options) => {
   await mkdir(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-  await writeFile(temp, text, { encoding: "utf8", mode });
+  const temp = tempName(path);
   try {
+    await writeFile(temp, text, { encoding: "utf8", mode });
     await chmod(temp, mode).catch(() => {
       return;
     });
+    if (options.exclusive) {
+      try {
+        await link(temp, path);
+      } catch (error) {
+        if (isCode(error, "EEXIST"))
+          throw error;
+        let handle;
+        let createdHere = false;
+        try {
+          handle = await open(path, "wx", mode);
+          createdHere = true;
+          await handle.writeFile(text, "utf8");
+          await handle.sync();
+        } catch (fallbackError) {
+          if (createdHere)
+            await unlink(path).catch(() => {
+              return;
+            });
+          throw fallbackError;
+        } finally {
+          await handle?.close().catch(() => {
+            return;
+          });
+        }
+      }
+      return;
+    }
+    if (options.expectedText !== undefined) {
+      let current;
+      try {
+        current = await readFile2(path, "utf8");
+      } catch (error) {
+        if (isCode(error, "ENOENT")) {
+          throw new ConfigWriteError("conflict", "The config file disappeared; retry.");
+        }
+        throw new ConfigWriteError("conflict", "The config file could not be re-read; retry.");
+      }
+      if (current !== options.expectedText) {
+        throw new ConfigWriteError("conflict", "The config file changed on disk; retry.");
+      }
+    }
     await rename(temp, path);
   } catch (error) {
+    if (error instanceof ConfigWriteError)
+      throw error;
+    if (isCode(error, "EEXIST")) {
+      throw new ConfigWriteError("conflict", "The config file appeared while it was being created.");
+    }
+    throw new ConfigWriteError("write-failed", "The config file could not be written.");
+  } finally {
     await unlink(temp).catch(() => {
       return;
     });
+  }
+};
+var assertReadable = (file) => {
+  if (file.kind === "ok" || file.kind === "missing")
+    return file;
+  if (file.kind === "not-regular") {
+    throw new ConfigWriteError("not-regular", "The config path is not a regular file.");
+  }
+  throw new ConfigWriteError("unreadable", `The config file could not be read (${file.code ?? "unknown error"}).`);
+};
+var createOnce = async (path, order) => {
+  const existing = assertReadable(await readConfigFile(path));
+  if (existing.kind === "ok")
+    return { created: false, present: true };
+  try {
+    await writeAtomic(path, renderConfigTemplate(order), 384, { exclusive: true });
+    return { created: true, present: true };
+  } catch (error) {
+    if (!(error instanceof ConfigWriteError) || error.code !== "conflict")
+      throw error;
+    const appeared = assertReadable(await readConfigFile(path));
+    if (appeared.kind === "ok")
+      return { created: false, present: true };
     throw error;
   }
 };
-var saveOnce = async (path, order) => {
-  const raw = await readRawConfig(path);
-  const at = new Date().toISOString();
-  let merged;
-  let reset = null;
-  let mode = 384;
-  if (raw.kind === "ok") {
-    merged = { ...raw.value, cardOrder: order };
-    mode = await modeOf(path);
-  } else if (raw.kind === "invalid") {
-    const backupPath = await backup(path);
-    merged = { cardOrder: order };
-    reset = { at, backupPath };
-    mode = await modeOf(path);
-  } else {
-    merged = { cardOrder: order };
+var saveOnce = async (path, order, hooks) => {
+  let existing = assertReadable(await readConfigFile(path));
+  if (existing.kind === "missing") {
+    try {
+      await writeAtomic(path, renderConfigTemplate(order), 384, { exclusive: true });
+      return { order, recovery: null };
+    } catch (error) {
+      if (!(error instanceof ConfigWriteError) || error.code !== "conflict")
+        throw error;
+      existing = assertReadable(await readConfigFile(path));
+      if (existing.kind === "missing")
+        throw error;
+    }
   }
-  await writeAtomic(path, `${JSON.stringify(merged, null, 2)}
-`, mode);
-  return { order, reset };
+  const inspection = inspectConfigDocument(existing.text);
+  const mode = await modeOf(path);
+  if (inspection.state === "ok") {
+    const next = setCardOrderText(existing.text, order);
+    if (next === null) {
+      throw new ConfigWriteError("write-failed", "The config file could not be edited.");
+    }
+    await hooks?.beforePublish?.(path);
+    await writeAtomic(path, next, mode, { exclusive: false, expectedText: existing.text });
+    return { order, recovery: null };
+  }
+  const at = new Date().toISOString();
+  const { body, bom } = splitLeadingBom(existing.text);
+  const recovered = recoverConfigValues(body);
+  const template = renderRebuiltConfig(body, order, recovered.values, at);
+  const rebuilt = bom ? `\uFEFF${template}` : template;
+  await hooks?.beforePublish?.(path);
+  await writeAtomic(path, rebuilt, mode, { exclusive: false, expectedText: existing.text });
+  return { order, recovery: recoveryReport(at, recovered) };
 };
 var queue = Promise.resolve();
-var saveCardOrder = (path, order) => {
-  const next = queue.then(() => saveOnce(path, order), () => saveOnce(path, order));
-  queue = next.catch(() => {
+var serialized = (work) => {
+  const next = queue.then(work, work);
+  queue = next.then(() => {
+    return;
+  }, () => {
     return;
   });
   return next;
 };
+var createConfigFile = (path, order) => serialized(() => createOnce(path, order));
+var saveCardOrder = (path, order, hooks) => serialized(() => saveOnce(path, order, hooks));
 
 // src/service/upstream.ts
 var MAX_REDIRECTS = 3;
@@ -574,6 +1172,8 @@ var writeJson = (response, status, body) => {
 var statusFor = (kind) => {
   if (kind === "bad-request")
     return 400;
+  if (kind === "config-conflict")
+    return 409;
   if (kind === "internal")
     return 500;
   if (kind === "upstream-timeout")
@@ -612,17 +1212,12 @@ var readBody = (request) => new Promise((resolve, reject) => {
   });
   request.on("error", reject);
 });
-var parseOrderBody = (text) => {
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
+var parseOrderArray = (raw, allowEmpty) => {
+  if (!Array.isArray(raw))
     return null;
-  }
-  if (!isRecord3(value) || !Array.isArray(value.order))
+  if (!allowEmpty && raw.length === 0)
     return null;
-  const raw = value.order;
-  if (raw.length === 0 || raw.length > MAX_CARD_ORDER)
+  if (raw.length > MAX_CARD_ORDER)
     return null;
   const order = [];
   for (const entry of raw) {
@@ -634,6 +1229,32 @@ var parseOrderBody = (text) => {
   }
   return order;
 };
+var parseOrderBody = (text) => {
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord3(value))
+    return null;
+  return parseOrderArray(value.order, false);
+};
+var parseCreateBody = (text) => {
+  if (text.trim() === "")
+    return [];
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord3(value))
+    return null;
+  if (value.order === undefined)
+    return [];
+  return parseOrderArray(value.order, true);
+};
 var createService = (options) => {
   const {
     port,
@@ -641,6 +1262,7 @@ var createService = (options) => {
     configPath = defaultConfigPath(),
     upstreamTimeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS,
     refreshMinIntervalMs = DEFAULT_REFRESH_MIN_INTERVAL_MS,
+    beforeConfigPublish,
     now = Date.now,
     fetchImpl = fetch
   } = options;
@@ -649,7 +1271,7 @@ var createService = (options) => {
   let lastGoodCards = null;
   let lastGoodAt = null;
   let lastFreshAt = null;
-  let resetNotice = null;
+  let recoveryNotice = null;
   const loadConfig = async () => readConfig(configPath);
   const callUpstream = (baseUrl, apiKey, path, query) => requestUpstream({ baseUrl, apiKey, path, query, timeoutMs: upstreamTimeoutMs, fetchImpl });
   const answerUpstreamFailure = (response, failure, endpoint) => {
@@ -674,12 +1296,15 @@ var createService = (options) => {
         fontScale: config.fontScale,
         fontScaleInvalid: config.fontScaleInvalid,
         cardOrder: config.cardOrder,
+        cardOrderInvalid: config.cardOrderInvalid,
         language: config.language,
         languageInvalid: config.languageInvalid,
-        reset: resetNotice,
+        recovery: recoveryNotice,
         source: config.source,
         present: config.present,
-        issue: config.issue
+        validity: config.validity,
+        issue: config.issue,
+        issues: config.issues
       };
       writeJson(response, 200, report);
       return;
@@ -791,10 +1416,37 @@ var createService = (options) => {
     }
     writeJson(response, 404, { error: "not-found" });
   };
-  const handleOrder = async (request, response) => {
+  const failWrite = (response, error) => {
+    if (error instanceof ConfigWriteError) {
+      if (error.code === "conflict") {
+        fail(response, "config-conflict", { message: error.message });
+        return;
+      }
+      fail(response, "internal", { message: error.message });
+      return;
+    }
+    fail(response, "internal", { message: "The config file could not be written." });
+  };
+  const handleConfigWrite = async (pathname, request, response) => {
     const body = await readBody(request);
     if (!body.ok) {
-      fail(response, "bad-request", { message: `The order body must be JSON under ${MAX_ORDER_BODY_BYTES} bytes.` });
+      fail(response, "bad-request", { message: `The body must be JSON under ${MAX_ORDER_BODY_BYTES} bytes.` });
+      return;
+    }
+    if (pathname === "/config/create") {
+      const order = parseCreateBody(body.text);
+      if (order === null) {
+        fail(response, "bad-request", {
+          message: `order, when present, must be an array of 0 to ${MAX_CARD_ORDER} strings, each 1 to ${MAX_CARD_ORDER_KEY} characters.`
+        });
+        return;
+      }
+      try {
+        const created = await createConfigFile(configPath, order);
+        writeJson(response, 200, { ok: true, created: created.created, present: created.present });
+      } catch (error) {
+        failWrite(response, error);
+      }
       return;
     }
     const order = parseOrderBody(body.text);
@@ -805,12 +1457,12 @@ var createService = (options) => {
       return;
     }
     try {
-      const saved = await saveCardOrder(configPath, order);
-      if (saved.reset)
-        resetNotice = saved.reset;
-      writeJson(response, 200, { ok: true, order: saved.order, reset: saved.reset });
-    } catch {
-      fail(response, "internal", { message: "The config file could not be written." });
+      const saved = await saveCardOrder(configPath, order, beforeConfigPublish === undefined ? undefined : { beforePublish: beforeConfigPublish });
+      if (saved.recovery)
+        recoveryNotice = saved.recovery;
+      writeJson(response, 200, { ok: true, order: saved.order, recovery: saved.recovery });
+    } catch (error) {
+      failWrite(response, error);
     }
   };
   return {
@@ -836,8 +1488,8 @@ var createService = (options) => {
           });
           return;
         }
-        if (method === "POST" && url.pathname === "/config/order") {
-          handleOrder(request, response).catch(() => {
+        if (method === "POST" && (url.pathname === "/config/order" || url.pathname === "/config/create")) {
+          handleConfigWrite(url.pathname, request, response).catch(() => {
             if (!response.headersSent)
               fail(response, "internal");
             else

@@ -66,6 +66,7 @@ The file is JSONC:
 
 - `//` line comments and `/* */` block comments are allowed; `//` and `/*` inside a string are not comments.
 - Trailing commas are rejected. Duplicate top-level keys are rejected (duplicates nested deeper are allowed). Every syntax error is collected; the tolerant parser's partial value is never trusted without checking `errors`.
+- A single leading UTF-8 BOM is accepted and preserved by a `cardOrder` edit. A second leading BOM, or a BOM anywhere after the first character, is still a syntax error.
 - Unknown top-level keys are ignored by the parser and byte-preserved by a `cardOrder` edit.
 - Strict JSON is valid where it stands and is not reformatted. A save replaces only the root `cardOrder` value, edited with `jsonc-parser`; comments inside that array may be dropped, which the generated template states.
 
@@ -93,7 +94,7 @@ bun test tests/quotas.test.ts
 bun run check   # typecheck -> all tests -> build
 ```
 
-Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 269 passing tests in 13 files.
+Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the service module from `src/service/server.ts`. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 280 passing tests in 13 files.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and:
 
@@ -106,11 +107,11 @@ git diff --exit-code -- panel/main.js service/main.js
 | File | Coverage |
 | --- | --- |
 | `tests/config.test.ts` | Config validation through `parseConfigText`: document-level failures (broken JSON, non-object root), http/https rules, loopback detection, credentials and query strings, key characters, refresh range, unknown keys; lenient `cardOrder`; order-key encoding; `#2` suffixes; known/unknown/expired keys; `language` defaults, explicit values, invalid fallback without endpoint degradation; `fontScale` default, 50–200 range, and invalid fallback without endpoint degradation. |
-| `tests/config-document.test.ts` | Strict JSONC inspection: line and block comments, `//` and `/*` inside strings, trailing commas, truncated strings, empty content, duplicate top-level keys (nested duplicates allowed), non-object roots; lenient field issues that keep the endpoint while a fatal one falls back wholesale; conservative recovery of the endpoint/key pair, duplicated fields, unproven values, and the `auto`/`en`/`zh-CN` language whitelist; the local `cardOrder` edit preserving comments, unknown keys, indentation, and CRLF; the generated template is itself valid JSONC with six active keys. |
+| `tests/config-document.test.ts` | Strict JSONC inspection: line and block comments, `//` and `/*` inside strings, trailing commas, truncated strings, empty content, duplicate top-level keys (nested duplicates allowed), non-object roots; a single leading UTF-8 BOM accepted and preserved by the local `cardOrder` edit while a second/mid-document BOM stays invalid; lenient field issues that keep the endpoint while a fatal one falls back wholesale; conservative recovery of the endpoint/key pair, duplicated fields, unproven values, and the `auto`/`en`/`zh-CN` language whitelist; the local `cardOrder` edit preserving comments, unknown keys, indentation, and CRLF; the generated template is itself valid JSONC with six active keys. |
 | `tests/i18n.test.ts` | Registry validity, key parity, placeholder parity, CLDR plural categories (`one/other` in English, `other` in `zh-CN`), interpolation/fallback, exact `resolveLocale` matching and unsupported markers; the Arabic `test` fixture is RTL but never a runtime match. |
 | `tests/format.test.ts` | Number, cost, credit, percentage, and time formatting; zero hit-rate denominator; window-percentage fallback chain; money-row priority. |
 | `tests/quotas-view.test.ts` | Pool grouping and layered folding (Antigravity's three rows, nine hidden layers), duration sorting, pool-less windows sharing a row, remaining-amount rows, balance splitting, tightest remaining, icon mapping and fallback. |
-| `tests/service.test.ts` | Bearer check, `/health` contract, `/config` report (path, endpoint, `apiKeyConfigured` without the key, `fontScale`/`fontScaleInvalid`, `validity`, `recovery`, and the old `config.json` being ignored), immediate config reload, 405/404 method/path combinations; `POST /config/create` (bilingual six-field template, empty body, explicit order, an existing file left untouched, bad bodies, a non-regular path refused); `POST /config/order` (only `cardOrder` edited, unknown keys and mode preserved, creation when missing, in-place rebuild with no `.bak`, a field error that does not rebuild, bad and oversized bodies, concurrent writes, 401). |
+| `tests/service.test.ts` | Bearer check, `/health` contract, `/config` report (path, endpoint, `apiKeyConfigured` without the key, `fontScale`/`fontScaleInvalid`, `validity`, `recovery`, the old `config.json` being ignored, and a BOM-prefixed file keeping its endpoint/key), immediate config reload, 405/404 method/path combinations; `POST /config/create` (bilingual six-field template, empty body, explicit order, an existing file left untouched, bad bodies, a non-regular path refused); `POST /config/order` (only `cardOrder` edited, unknown keys and mode preserved, BOM and outside comments preserved, creation when missing, in-place rebuild with no `.bak`, a BOM-prefixed rebuild that keeps the BOM and comments the BOM-free old body, a field error that does not rebuild, bad and oversized bodies, concurrent writes, 401). |
 | `tests/usage.test.ts` | Period and key forwarding, default/invalid periods, missing fields without NaN, 401/403/500/timeout/connection failure/non-JSON/schema mismatch. |
 | `tests/quotas.test.ts` | All card variants, `kept`/`refresh` forwarding, throttling, empty-cache fallback, cross-origin redirect rejection, same-origin redirect following. |
 | `tests/secret.test.ts` | The key never appears in `/config`, logs, or build artifacts; no key literal in source. |
@@ -122,7 +123,7 @@ git diff --exit-code -- panel/main.js service/main.js
 
 ## Verification
 
-The record behind the README's behaviour and screenshot claims. Verified on 2026-11-01; it predates `fontScale`, the language-fallback change, and the switch to `config.jsonc`. The suite now has 269 passing tests in 13 files, and `bun run check` remains the gate. The hashes and sizes below belong to that 2026-11-01 build and no longer describe the current bundles, which were rebuilt later for the JSONC change:
+The record behind the README's behaviour and screenshot claims. Verified on 2026-11-01; it predates `fontScale`, the language-fallback change, and the switch to `config.jsonc`. The suite now has 280 passing tests in 13 files, and `bun run check` remains the gate. The hashes and sizes below belong to that 2026-11-01 build and no longer describe the current bundles, which were rebuilt later for the JSONC change:
 
 - `bun run check` passed: typecheck, 211 tests in 12 files (0 fail, 1,783 expectations), and both builds.
 - Two consecutive builds were byte-identical. SHA-256:

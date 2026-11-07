@@ -68,6 +68,7 @@ bun run typecheck      # tsc --noEmit
 
 - 允许 `//` 行注释与 `/* */` 块注释；字符串里的 `//` 与 `/*` 不算注释。
 - 拒绝尾随逗号。拒绝重复的顶层键（更深层的重复允许）。所有语法错误都会被收集；不检查 `errors` 就绝不信任容错解析器给出的半截值。
+- 允许单个前导 UTF-8 BOM，`cardOrder` 编辑会保留它。第二个前导 BOM，或第一个字符之后任何位置出现 BOM，仍按语法错误处理。
 - 未知顶层键解析时被忽略，在 `cardOrder` 编辑时逐字节保留。
 - 严格 JSON 原样有效，不会被重排格式。保存只替换根级 `cardOrder` 的值，用 `jsonc-parser` 编辑；该数组内部的注释可能丢失，生成的模板对此有说明。
 
@@ -95,7 +96,7 @@ bun test tests/quotas.test.ts
 bun run check   # 类型检查 -> 全部测试 -> 构建
 ```
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 269 个通过的测试（13 个文件）。
+测试全部离线：假网关、临时配置目录，以及测试客户端与 `src/service/server.ts` 服务模块之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 280 个通过的测试（13 个文件）。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 
@@ -108,11 +109,11 @@ git diff --exit-code -- panel/main.js service/main.js
 | 文件 | 内容 |
 | --- | --- |
 | `tests/config.test.ts` | 经 `parseConfigText` 的配置校验：文档级失败（JSON 损坏、根不是对象）、http/https 规则、环回判定、凭据与查询串、密钥字符、刷新区间、未知键；`cardOrder` 宽松解析、顺序键编码、`#2` 后缀、已知/未知/过期键的排序；`language` 默认值、显式值、坏值回退且不降级端点；`fontScale` 默认值、50–200 区间与坏值回退且不降级端点。 |
-| `tests/config-document.test.ts` | 严格 JSONC 检查：行/块注释、字符串内的 `//` 与 `/*`、尾随逗号、截断的字符串、空内容、重复顶层键（允许嵌套重复）、根不是对象；宽松字段错误保留端点而致命错误整体回退；端点/密钥成组的保守恢复、重复字段、无法证明的值、`auto`/`en`/`zh-CN` 语言白名单；只改 `cardOrder` 且保留注释、未知键、缩进与 CRLF；生成的模板本身是合法 JSONC 且只有六个生效键。 |
+| `tests/config-document.test.ts` | 严格 JSONC 检查：行/块注释、字符串内的 `//` 与 `/*`、尾随逗号、截断的字符串、空内容、重复顶层键（允许嵌套重复）、根不是对象；单个前导 UTF-8 BOM 被接受且本地 `cardOrder` 编辑保留，第二个/中途 BOM 仍无效；宽松字段错误保留端点而致命错误整体回退；端点/密钥成组的保守恢复、重复字段、无法证明的值、`auto`/`en`/`zh-CN` 语言白名单；只改 `cardOrder` 且保留注释、未知键、缩进与 CRLF；生成的模板本身是合法 JSONC 且只有六个生效键。 |
 | `tests/i18n.test.ts` | 注册表合法性、键齐全、占位符一致、CLDR 复数类别（en 的 `one/other`、zh-CN 的 `other`）、插值/回退、`resolveLocale` 的精确匹配与 unsupported 标记；阿拉伯语 `test` 夹具是 RTL 但绝不是运行时匹配。 |
 | `tests/format.test.ts` | 数字/成本/积分/百分比/时间格式化，命中率分母为 0，窗口百分比回退链，金额行优先级。 |
 | `tests/quotas-view.test.ts` | pool 分组与分层折叠（Antigravity 3 行、9 个分层隐藏）、时长排序、无 pool 窗口共用一行、剩余口径金额行、余额拆分、最紧剩余、图标映射与兜底。 |
-| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`validity`、`recovery`，以及旧 `config.json` 被忽略）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语六字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、缺失时新建、原地重建且无 `.bak`、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。 |
+| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`validity`、`recovery`、旧 `config.json` 被忽略、BOM 前缀文件保留端点/密钥）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语六字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、保留 BOM 与数组外注释、缺失时新建、原地重建且无 `.bak`、BOM 文件重建保留 BOM 并注释去 BOM 的旧正文、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。 |
 | `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符。 |
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
@@ -124,7 +125,7 @@ git diff --exit-code -- panel/main.js service/main.js
 
 ## 验证
 
-本记录支撑 README 的行为与截图说明。2026-11-01 验证；该记录早于 `fontScale`、语言回退改动与 `config.jsonc` 切换。套件当前有 269 个通过的测试（13 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次 2026-11-01 的构建，已不能描述当前产物——产物后来为 JSONC 改动重建过：
+本记录支撑 README 的行为与截图说明。2026-11-01 验证；该记录早于 `fontScale`、语言回退改动与 `config.jsonc` 切换。套件当前有 280 个通过的测试（13 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次 2026-11-01 的构建，已不能描述当前产物——产物后来为 JSONC 改动重建过：
 
 - `bun run check` 全绿：类型检查、12 个文件共 211 个测试（0 失败、1,783 次断言）、两次构建。
 - 连续两次构建字节一致。SHA-256：

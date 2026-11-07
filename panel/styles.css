@@ -641,6 +641,153 @@ body .oc-sdk-badge {
   overflow-wrap: anywhere;
 }
 
+/* The configuration card header is a button: gear, label, file validity, chevron. */
+.config-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.config-head:focus-visible {
+  outline: 2px solid var(--oc-focus);
+  outline-offset: 1px;
+}
+
+.config-gear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  color: var(--oc-muted);
+}
+
+.config-gear svg {
+  width: 17px;
+  height: 17px;
+}
+
+.config-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--oc-muted);
+  font: 0.7917rem/1.4 var(--oc-mono);
+  overflow-wrap: anywhere;
+}
+
+.config-status[data-tone='success'] {
+  color: var(--oc-success-text);
+}
+
+.config-status[data-tone='warning'] {
+  color: var(--oc-warning-text);
+}
+
+.config-status[data-tone='error'] {
+  color: var(--oc-error-text);
+}
+
+.config-chev {
+  flex: none;
+  margin-inline-start: auto;
+  width: 8px;
+  color: var(--oc-muted);
+  font-size: 0.75rem;
+}
+
+.config-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-body[hidden] {
+  display: none;
+}
+
+/* The full path is the control: it wraps instead of truncating. */
+.config-path {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 0.8333rem/1.45 var(--oc-mono);
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.config-path:hover {
+  text-decoration: underline;
+}
+
+.config-path:focus-visible {
+  outline: 2px solid var(--oc-focus);
+  outline-offset: 1px;
+}
+
+.config-copy,
+.config-create-status {
+  margin: 0;
+}
+
+.config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.config-action {
+  padding: 4px 9px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: color-mix(in srgb, var(--oc-fg) 6%, transparent);
+  color: var(--oc-fg);
+  font: 0.8333rem/1.4 var(--oc-font);
+  cursor: pointer;
+}
+
+.config-action:hover {
+  background: color-mix(in srgb, var(--oc-fg) 10%, transparent);
+}
+
+.config-action:focus-visible {
+  outline: 2px solid var(--oc-focus);
+  outline-offset: 1px;
+}
+
+.config-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.config-action-secondary {
+  background: transparent;
+}
+
+.config-confirm,
+.config-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.config-confirm[hidden],
+.config-recovery[hidden] {
+  display: none;
+}
+
 .footer {
   margin: 0;
   color: var(--oc-muted);

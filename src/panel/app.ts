@@ -24,7 +24,6 @@ import {
   type QuotaCard,
   type QuotaReport,
   type QuotaWindow,
-  type ResetNotice,
   type ServiceErrorKind,
   type UsageBucket,
   type UsageReport,
@@ -51,6 +50,10 @@ import {
   type BalancePart,
 } from '../shared/quotas-view.ts';
 import { LOGOS, type LogoEntry } from './logos.ts';
+
+/** Monochrome gear, painted with `currentColor`; not a drag handle. */
+const GEAR_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>';
 
 export type PanelOptions = {
   /** The host bridge to read through; the panel never reaches the network itself. */
@@ -198,14 +201,24 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   quotaCard.append(quotaHead, quotaList, quotaLive);
 
   const configCard = el('section', 'card config');
-  const configHead = el('div', 'card-head');
+  const configHead = el('button', 'config-head');
+  configHead.type = 'button';
+  configHead.setAttribute('aria-expanded', 'false');
+  configHead.setAttribute('aria-controls', 'config-body');
+  const configGear = el('span', 'config-gear');
+  configGear.innerHTML = GEAR_SVG;
   const configLabel = el('span', 'label', t('config.title'));
-  configHead.append(configLabel);
+  const configStatus = el('span', 'config-status', t('config.status.checking'));
+  const configChev = el('span', 'config-chev', '▸');
+  configHead.append(configGear, configLabel, configStatus, configChev);
+
+  const configBody = el('div', 'config-body');
+  configBody.id = 'config-body';
+  configBody.hidden = true;
+
   const configRows = el('div', 'rows');
   const configIssue = el('p', 'issue');
   configIssue.hidden = true;
-  const configReset = el('p', 'issue');
-  configReset.hidden = true;
   const configLanguage = el('p', 'issue');
   configLanguage.hidden = true;
   const configFontScale = el('p', 'issue');
@@ -213,16 +226,49 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   const configNote = el('p', 'note');
   configNote.hidden = true;
   const configFontNote = el('p', 'note', t('config.fontScale.note'));
-  configCard.append(
-    configHead,
+  const configRecovery = el('div', 'config-recovery');
+  configRecovery.hidden = true;
+  const configInit = el('p', 'issue');
+  configInit.hidden = true;
+
+  const configCreate = el('div', 'config-create');
+  configCreate.hidden = true;
+  const configCreateAsk = el('div', 'config-actions');
+  const configCreateButton = el('button', 'config-action', t('config.create'));
+  configCreateButton.type = 'button';
+  configCreateAsk.append(configCreateButton);
+  const configCreateConfirm = el('div', 'config-confirm');
+  configCreateConfirm.hidden = true;
+  const configCreateQuestion = el('p', 'note', '');
+  const configCreateActions = el('div', 'config-actions');
+  const configCreateYes = el('button', 'config-action', t('config.create.confirmYes'));
+  configCreateYes.type = 'button';
+  const configCreateNo = el('button', 'config-action config-action-secondary', t('config.create.cancel'));
+  configCreateNo.type = 'button';
+  configCreateActions.append(configCreateYes, configCreateNo);
+  configCreateConfirm.append(configCreateQuestion, configCreateActions);
+  const configCreateStatus = el('p', 'note config-create-status');
+  configCreateStatus.hidden = true;
+  configCreateStatus.setAttribute('role', 'status');
+  configCreate.append(configCreateAsk, configCreateConfirm, configCreateStatus);
+
+  const configCopyStatus = el('p', 'note config-copy');
+  configCopyStatus.hidden = true;
+  configCopyStatus.setAttribute('role', 'status');
+
+  configBody.append(
     configRows,
+    configCopyStatus,
     configIssue,
-    configReset,
+    configRecovery,
     configLanguage,
     configFontScale,
     configNote,
     configFontNote,
+    configInit,
+    configCreate,
   );
+  configCard.append(configHead, configBody);
 
   type ConfigRow = { key: HTMLElement; value: HTMLElement };
 
@@ -235,12 +281,17 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     return { key: label, value };
   };
 
-  const configPathRow = configRow('config.file');
+  const configPathRow = el('div', 'row');
+  const configPathKey = el('span', 'row-key', t('config.file'));
+  const configPathValue = el('button', 'row-value config-path', '—');
+  configPathValue.type = 'button';
+  configPathRow.append(configPathKey, configPathValue);
+  configRows.append(configPathRow);
+
   const endpointRow = configRow('config.endpoint');
   const keyRow = configRow('config.apiKey');
   const refreshRow = configRow('config.refresh');
   const fontScaleRow = configRow('config.fontScale');
-  const configPathValue = configPathRow.value;
   const endpointValue = endpointRow.value;
   const keyValue = keyRow.value;
   const refreshValue = refreshRow.value;
@@ -291,7 +342,6 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     /** Why the last order write failed, shown next to the Quotas stamp. */
     orderError: string | null;
     busy: boolean;
-    loadedOnce: boolean;
   };
 
   const state: State = {
@@ -305,10 +355,34 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     dragging: false,
     orderError: null,
     busy: false,
-    loadedOnce: false,
   };
 
   let activeFontScale = DEFAULT_FONT_SCALE;
+
+  /** Collapsed by default; only this panel instance remembers it. */
+  let configOpen = false;
+
+  const applyConfigOpen = (): void => {
+    configBody.hidden = !configOpen;
+    configHead.setAttribute('aria-expanded', configOpen ? 'true' : 'false');
+    configChev.textContent = configOpen ? '▾' : '▸';
+  };
+
+  configHead.addEventListener('click', () => {
+    configOpen = !configOpen;
+    applyConfigOpen();
+  });
+  applyConfigOpen();
+
+  type InitMessage = { key: string; vars?: MessageVars };
+  type InitState = 'idle' | 'running' | 'done' | 'failed';
+  let initState: InitState = 'idle';
+  let initMessage: InitMessage | null = null;
+  let creatingConfig = false;
+
+  /** Version-prefixed, instance-scoped marker; the only host storage this panel uses. */
+  const INIT_MARKER_KEY = 'openchamber-magpie-usage:v1:config-initialized';
+  const STORAGE_OPTIONS = { scope: 'instance' as const };
 
   /**
    * The host has no font-size token for guests (SDK 2.5.1); `fontScale` in the
@@ -383,18 +457,22 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
 
     setText(quotaLabel, t('quotas.title'));
     setText(configLabel, t('config.title'));
-    setText(configPathRow.key, t('config.file'));
+    setText(configPathKey, t('config.file'));
     setText(endpointRow.key, t('config.endpoint'));
     setText(keyRow.key, t('config.apiKey'));
     setText(refreshRow.key, t('config.refresh'));
     setText(fontScaleRow.key, t('config.fontScale'));
     setText(configFontNote, t('config.fontScale.note'));
+    setText(configCreateButton, t('config.create'));
+    setText(configCreateYes, t('config.create.confirmYes'));
+    setText(configCreateNo, t('config.create.cancel'));
     setText(footer, t('footer.data'));
 
     refreshButton.update({ label: t('button.refresh') });
     badge.update({ label: t(badgeKey), tone: badgeTone });
 
     if (state.config) renderConfig();
+    else setText(configStatus, t('config.status.checking'));
     if (state.usage) renderUsage();
     if (state.quotas) renderQuotas();
     if (!state.config && !state.usage) setText(subtitle, t('panel.subtitle'));
@@ -429,6 +507,9 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     if (!entries) return;
     registry = entries;
     await syncLocale();
+    // The registry decides whether an explicit language is supported, which
+    // feeds the configuration card status.
+    if (state.config) renderConfig();
   };
 
   /* -------------------------------------------------------------------------- */
@@ -461,6 +542,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     switch (kind) {
       case 'bad-request':
         return t('error.service.badRequest');
+      case 'config-conflict':
+        return t('error.service.configConflict');
       case 'internal':
         return t('error.service.internal');
       case 'upstream-unauthorized':
@@ -557,9 +640,13 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       return;
     }
     state.config = value as unknown as ConfigReport;
-    state.order = Array.isArray(value.cardOrder)
-      ? value.cardOrder.filter((entry): entry is string => typeof entry === 'string')
-      : [];
+    // A failed save keeps the on-screen order; do not let a later config read
+    // snap the cards back to the old file order before the next retry.
+    if (state.orderError === null) {
+      state.order = Array.isArray(value.cardOrder)
+        ? value.cardOrder.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+    }
     renderConfig();
     void syncLocale();
   };
@@ -602,6 +689,161 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   };
 
   /* -------------------------------------------------------------------------- */
+  /* Config actions                                                             */
+  /* -------------------------------------------------------------------------- */
+
+  const copyConfigPath = async (): Promise<void> => {
+    const path = state.config?.configPath;
+    if (!path) return;
+    try {
+      await host.writeClipboard(path);
+      setMessage(configCopyStatus, t('config.copy.ok'));
+    } catch (error) {
+      setMessage(configCopyStatus, t('config.copy.failed', { message: describeHostError(error) }));
+    }
+  };
+
+  configPathValue.addEventListener('click', () => {
+    void copyConfigPath();
+  });
+
+  const createMissingConfig = async (): Promise<void> => {
+    const config = state.config;
+    if (!config || creatingConfig) return;
+    creatingConfig = true;
+    configCreateButton.disabled = true;
+    configCreateYes.disabled = true;
+    setMessage(configCreateStatus, t('config.create.busy'));
+
+    const answer = await postJson('/config/create', { order: state.order });
+    if (disposed) return;
+    creatingConfig = false;
+    configCreateButton.disabled = false;
+    configCreateYes.disabled = false;
+
+    if (!answer.ok) {
+      setMessage(configCreateStatus, t('config.create.failed', { message: answer.message }));
+      return;
+    }
+
+    const created = isRecord(answer.value) && answer.value.created === true;
+    configCreateConfirm.hidden = true;
+    await loadConfig();
+    if (disposed) return;
+    if (!created) {
+      setMessage(configCreateStatus, t('config.create.exists', { path: config.configPath }));
+    } else {
+      setMessage(configCreateStatus, null);
+    }
+    renderConfig();
+  };
+
+  configCreateButton.addEventListener('click', () => {
+    configCreateConfirm.hidden = false;
+    if (state.config) {
+      setText(configCreateQuestion, t('config.create.confirm', { path: state.config.configPath }));
+    }
+  });
+
+  configCreateNo.addEventListener('click', () => {
+    configCreateConfirm.hidden = true;
+  });
+
+  configCreateYes.addEventListener('click', () => {
+    void createMissingConfig();
+  });
+
+  /**
+   * First open only. The marker is the one exception to "the panel stores
+   * nothing": instance-scoped host storage keeps a versioned flag, never the
+   * config, a path, the key, the fold state, or the order.
+   */
+  const initializeConfig = async (): Promise<void> => {
+    if (initState !== 'idle' || disposed) return;
+    const config = state.config;
+    if (!config) return;
+    initState = 'running';
+    // Disable the manual button while the automatic create is in flight.
+    renderConfig();
+
+    try {
+      if (!host.storage) throw new Error('Extension storage is unavailable.');
+      const marker = await host.storage.get(INIT_MARKER_KEY, STORAGE_OPTIONS);
+      if (disposed) return;
+      if (marker !== undefined) {
+        initState = 'done';
+        renderConfig();
+        return;
+      }
+    } catch (error) {
+      initState = 'failed';
+      initMessage = {
+        key: 'config.init.markerFailed',
+        vars: { message: describeHostError(error) },
+      };
+      renderConfig();
+      return;
+    }
+
+    if (config.present) {
+      try {
+        if (!host.storage) throw new Error('Extension storage is unavailable.');
+        await host.storage.set(
+          INIT_MARKER_KEY,
+          { version: 1, at: new Date().toISOString() },
+          STORAGE_OPTIONS,
+        );
+        initState = 'done';
+      } catch (error) {
+        // The marker is bookkeeping; a failure never rolls back an existing file.
+        initState = 'done';
+        initMessage = {
+          key: 'config.init.markerFailed',
+          vars: { message: describeHostError(error) },
+        };
+        renderConfig();
+      }
+      return;
+    }
+
+    // Unreadable or non-regular: never turn that into a create.
+    if (config.validity !== 'missing') {
+      initState = 'done';
+      return;
+    }
+
+    const answer = await postJson('/config/create', { order: state.order });
+    if (disposed) return;
+    if (!answer.ok) {
+      initState = 'failed';
+      initMessage = {
+        key: 'config.init.createFailed',
+        vars: { message: answer.message },
+      };
+      renderConfig();
+      return;
+    }
+
+    try {
+      if (!host.storage) throw new Error('Extension storage is unavailable.');
+      await host.storage.set(
+        INIT_MARKER_KEY,
+        { version: 1, at: new Date().toISOString() },
+        STORAGE_OPTIONS,
+      );
+    } catch (error) {
+      // The file exists now; say the marker was not remembered, do not retry.
+      initMessage = {
+        key: 'config.init.createdMarkerFailed',
+        vars: { message: describeHostError(error) },
+      };
+    }
+    initState = 'done';
+    await loadConfig();
+    if (!disposed) renderConfig();
+  };
+
+  /* -------------------------------------------------------------------------- */
   /* Rendering                                                                  */
   /* -------------------------------------------------------------------------- */
 
@@ -612,12 +854,38 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   };
 
+  const supportedConfigLanguage = (language: string): boolean => {
+    if (!registry) return true;
+    return language === 'auto' || localeCodes().includes(language);
+  };
+
+  const configStatusKey = (config: ConfigReport | null): string => {
+    if (!config) return 'config.status.checking';
+    if (config.validity === 'missing') return 'config.status.missing';
+    if (config.validity === 'unreadable') return 'config.status.unreadable';
+    if (config.validity === 'invalid') return 'config.status.invalid';
+    const setting =
+      typeof config.language === 'string' && config.language !== '' ? config.language : 'auto';
+    return supportedConfigLanguage(setting) ? 'config.status.valid' : 'config.status.invalid';
+  };
+
+  const configStatusTone = (key: string): string => {
+    if (key === 'config.status.valid') return 'success';
+    if (key === 'config.status.invalid') return 'error';
+    if (key === 'config.status.unreadable') return 'warning';
+    return 'neutral';
+  };
+
   const renderConfig = (): void => {
     const config = state.config;
-    if (!config) return;
+    if (!config) {
+      setText(configStatus, t('config.status.checking'));
+      configStatus.dataset.tone = 'neutral';
+      return;
+    }
 
     setText(configPathValue, config.configPath);
-    configPathValue.title = config.configPath;
+    configPathValue.title = t('config.copy');
     setText(
       endpointValue,
       `${config.baseUrl}${t(config.loopback ? 'config.endpoint.loopback' : 'config.endpoint.remote')}`,
@@ -637,9 +905,55 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       t(config.loopback ? 'usage.endpoint.loopback' : 'usage.endpoint.remote', { host: config.host }),
     );
 
-    setMessage(configIssue, config.issue ? t('config.issue', { message: config.issue.message }) : null);
-    const reset = config.reset;
-    setMessage(configReset, reset ? t('config.reset', { path: reset.backupPath }) : null);
+    const statusKey = configStatusKey(config);
+    setText(configStatus, t(statusKey));
+    configStatus.dataset.tone = configStatusTone(statusKey);
+
+    const issues = Array.isArray(config.issues)
+      ? config.issues.filter(
+          (issue) => isRecord(issue) && typeof issue.message === 'string' && issue.message !== '',
+        )
+      : [];
+    // `fontScale` and non-string `language` already have localized notices
+    // below; do not print the service's English sentence a second time.
+    const messages = issues
+      .filter((issue) => {
+        if (issue.field === 'fontScale' && config.fontScaleInvalid) return false;
+        if (issue.field === 'language' && config.languageInvalid) return false;
+        return true;
+      })
+      .map((issue) => issue.message);
+    const issueText =
+      messages.length > 0
+        ? `${messages.join(' ')}${config.issue ? ` ${t('config.fatalNote')}` : ''}`
+        : (config.issue?.message ?? null);
+    setMessage(configIssue, issueText);
+
+    clear(configRecovery);
+    const recovery = config.recovery;
+    if (recovery) {
+      configRecovery.hidden = false;
+      configRecovery.append(
+        el('p', 'note', t('config.recovery', { path: config.configPath, at: recovery.at })),
+      );
+      const restored = Array.isArray(recovery.restored) ? recovery.restored : [];
+      const defaulted = Array.isArray(recovery.defaulted) ? recovery.defaulted : [];
+      if (restored.length > 0) {
+        configRecovery.append(
+          el('p', 'note', t('config.recovery.restored', { fields: restored.join(', ') })),
+        );
+      }
+      if (defaulted.length > 0) {
+        configRecovery.append(
+          el('p', 'note', t('config.recovery.defaulted', { fields: defaulted.join(', ') })),
+        );
+      }
+      if (restored.length === 0 && defaulted.length === 0) {
+        configRecovery.append(el('p', 'note', t('config.recovery.none')));
+      }
+    } else {
+      configRecovery.hidden = true;
+    }
 
     const setting = typeof config.language === 'string' && config.language !== '' ? config.language : 'auto';
     const resolved = registry ? resolveLocale(setting, hostLocale, localeCodes()) : null;
@@ -650,12 +964,18 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
         : null;
     setMessage(configLanguage, languageNotice);
 
-    if (!config.present) {
-      setMessage(configNote, t('config.missing', { path: config.configPath }));
-    } else if (config.issue) {
-      setMessage(configNote, t('config.edit', { path: config.configPath }));
-    } else {
-      setMessage(configNote, null);
+    setMessage(
+      configNote,
+      config.validity === 'missing' ? t('config.missing', { path: config.configPath }) : null,
+    );
+    setMessage(configInit, initMessage ? t(initMessage.key, initMessage.vars) : null);
+
+    const missing = config.validity === 'missing';
+    configCreate.hidden = !missing;
+    if (missing) {
+      setText(configCreateQuestion, t('config.create.confirm', { path: config.configPath }));
+      configCreateButton.disabled = creatingConfig || initState === 'running';
+      configCreateYes.disabled = creatingConfig || initState === 'running';
     }
 
     schedule(config.refreshSeconds);
@@ -719,7 +1039,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       sinceLine,
       usage.since ? t('usage.since', { when: formatWhen(usage.since) }) : t('usage.sinceUnknown'),
     );
-    setText(usageStamp, `${t(`period.${usage.period}`)} · ${localStamp()}`);
+    const stampPeriod = isPeriod(usage.period) ? usage.period : state.period;
+    setText(usageStamp, `${t(`period.${stampPeriod}`)} · ${localStamp()}`);
 
     if (!state.config) {
       setText(
@@ -973,6 +1294,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
 
   const buildQuotaCard = (entry: OrderedCard): HTMLElement => {
     const { card, key } = entry;
+    const cardName = card.name !== '' ? card.name : t('quota.unnamed');
     const node = el('section', 'quo-card');
     node.dataset.key = key;
     const collapsible = card.error === null;
@@ -982,15 +1304,15 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     const head = el('div', 'quo-head');
     const handle = el('button', 'quo-logo');
     handle.type = 'button';
-    handle.setAttribute('aria-label', t('quota.dragLabel', { name: card.name }));
+    handle.setAttribute('aria-label', t('quota.dragLabel', { name: cardName }));
     handle.append(logoNode(card));
 
     if (!collapsible) {
-      head.append(handle, el('span', 'quo-name', card.name));
+      head.append(handle, el('span', 'quo-name', cardName));
       node.append(head, el('p', 'quota-err', card.error ?? ''));
       const foot = cardFoot(card);
       if (foot) node.append(el('div', 'quo-foot', foot));
-      bindDrag(handle, key, card.name);
+      bindDrag(handle, key, cardName);
       return node;
     }
 
@@ -1003,7 +1325,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     const summary = el('button', 'quo-summary');
     summary.type = 'button';
     summary.setAttribute('aria-controls', body.id);
-    summary.append(el('span', 'quo-name', card.name));
+    summary.append(el('span', 'quo-name', cardName));
     if (card.plan) summary.append(el('span', 'quo-plan', card.plan));
     summary.append(el('span', 'quo-fig', summaryFigure(card, balance)));
     const chevron = el('span', 'quo-chev');
@@ -1026,7 +1348,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
 
     head.append(handle, summary);
     node.append(head, body);
-    bindDrag(handle, key, card.name);
+    bindDrag(handle, key, cardName);
     return node;
   };
 
@@ -1069,7 +1391,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     updateOrderNote();
     // A save that had to replace a broken file carries the notice; read /config
     // now so the Configuration card says so without waiting for the next cycle.
-    if (isRecord(value) && value.reset !== null && value.reset !== undefined) void loadConfig();
+    if (isRecord(value) && value.recovery !== null && value.recovery !== undefined) void loadConfig();
   };
 
   type DragState = {
@@ -1254,11 +1576,13 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     if (state.busy || disposed) return;
     setBusy(true);
     try {
-      if (mode !== 'period') await loadConfig();
+      if (mode !== 'period') {
+        await loadConfig();
+        await initializeConfig();
+      }
       await loadUsage();
       if (mode !== 'period') await loadQuotas(mode === 'manual');
     } finally {
-      state.loadedOnce = true;
       setBusy(false);
     }
   };

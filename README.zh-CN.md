@@ -214,7 +214,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 <td width="50%"><img src="docs/images/config-magpie.png" alt="magpie 桌面端设置·常规：语言菜单展开，包含跟随系统、English、简体中文、繁體中文" width="420"></td>
 </tr>
 <tr>
-<td><sub><b>OpenChamber</b>：绝对路径用不可逆黑条遮盖。语言不是面板控件，而是从 <code>config.json</code> 读取。</sub></td>
+<td><sub><b>OpenChamber</b>：绝对路径用不可逆黑条遮盖。语言不是面板控件，而是从 <code>config.jsonc</code> 读取。</sub></td>
 <td><sub><b>magpie 桌面端</b>：它自己的语言控件。扩展与 Magpie 采用同一思路，但各自保存设置。</sub></td>
 </tr>
 </table>
@@ -237,7 +237,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
 
 没有 `XDG_CONFIG_HOME` 时用 `~/.config/openchamber-magpie-usage/config.jsonc`。Windows 使用同一布局：`%USERPROFILE%\.config\openchamber-magpie-usage\config.jsonc`。
 
-文件是 JSONC：允许 `//` 行注释与 `/* */` 块注释，不允许尾随逗号，重复的顶层键会被拒绝，所有语法错误都会被报告而不是被容忍。未知的顶层键解析时被忽略，在 `cardOrder` 编辑时逐字节保留。旧的 `config.json` 从不被读取：两个文件同时存在时只用 `config.jsonc`。
+文件是 JSONC：允许 `//` 行注释与 `/* */` 块注释，不允许尾随逗号，重复的顶层键会被拒绝，所有语法错误都会被报告而不是被容忍。允许单个前导 UTF-8 BOM，并在编辑 `cardOrder` 时保留它；第二个前导 BOM 或出现在其他位置的 BOM 仍按语法错误处理。未知的顶层键解析时被忽略，在 `cardOrder` 编辑时逐字节保留。旧的 `config.json` 从不被读取：两个文件同时存在时只用 `config.jsonc`。
 
 ```jsonc
 {

@@ -146,9 +146,20 @@ const readyContext = (overrides: Partial<HostReadyContext> = {}): HostReadyConte
 type Reply = { status?: number; body: string } | Error;
 type Responder = (request: GuestRequest) => Reply | Promise<Reply>;
 
+type StorageState = {
+  values: Map<string, unknown>;
+  getCalls: number;
+  setCalls: number;
+  getError: Error | null;
+  setError: Error | null;
+};
+
 type HostState = {
   reply: Responder;
   status: ServiceStatus | Error;
+  storage: StorageState;
+  clipboard: string[];
+  clipboardError: Error | null;
 };
 
 type FakeHost = {
@@ -160,7 +171,19 @@ type FakeHost = {
 };
 
 const makeHost = (reply: Responder = respondOk): FakeHost => {
-  const state: HostState = { reply, status: 'ready' };
+  const state: HostState = {
+    reply,
+    status: 'ready',
+    storage: {
+      values: new Map<string, unknown>(),
+      getCalls: 0,
+      setCalls: 0,
+      getError: null,
+      setError: null,
+    },
+    clipboard: [],
+    clipboardError: null,
+  };
   const requests: GuestRequest[] = [];
   const listeners = new Set<(context: HostReadyContext) => void>();
 
@@ -174,6 +197,26 @@ const makeHost = (reply: Responder = respondOk): FakeHost => {
     serviceStatus: async (): Promise<{ status: ServiceStatus }> => {
       if (state.status instanceof Error) throw state.status;
       return { status: state.status };
+    },
+    storage: {
+      get: async (key: string): Promise<unknown> => {
+        state.storage.getCalls += 1;
+        if (state.storage.getError) throw state.storage.getError;
+        return state.storage.values.get(key);
+      },
+      set: async (key: string, value: unknown): Promise<void> => {
+        state.storage.setCalls += 1;
+        if (state.storage.setError) throw state.storage.setError;
+        state.storage.values.set(key, value);
+      },
+      delete: async (key: string): Promise<void> => {
+        state.storage.values.delete(key);
+      },
+      keys: async (): Promise<string[]> => [...state.storage.values.keys()].sort(),
+    },
+    writeClipboard: async (text: string): Promise<void> => {
+      if (state.clipboardError) throw state.clipboardError;
+      state.clipboard.push(text);
     },
     onReady: (listener: (context: HostReadyContext) => void): (() => void) => {
       listeners.add(listener);
@@ -202,7 +245,7 @@ const makeHost = (reply: Responder = respondOk): FakeHost => {
 const json = (value: unknown, status = 200): Reply => ({ status, body: JSON.stringify(value) });
 
 const configReport = (overrides: Partial<ConfigReport> = {}): ConfigReport => ({
-  configPath: '/home/tester/.config/openchamber-magpie-usage/config.json',
+  configPath: '/home/tester/.config/openchamber-magpie-usage/config.jsonc',
   baseUrl: 'https://magpie.test',
   host: 'magpie.test',
   loopback: false,
@@ -211,12 +254,15 @@ const configReport = (overrides: Partial<ConfigReport> = {}): ConfigReport => ({
   fontScale: 100,
   fontScaleInvalid: false,
   cardOrder: [],
+  cardOrderInvalid: false,
   language: 'auto',
   languageInvalid: false,
-  reset: null,
+  recovery: null,
   source: 'file',
   present: true,
+  validity: 'valid',
   issue: null,
+  issues: [],
   ...overrides,
 });
 
@@ -337,8 +383,10 @@ const respondOk: Responder = (request) => {
         : { kept: true }));
     case '/config/order': {
       const body = request.body ? (JSON.parse(request.body) as { order?: string[] }) : {};
-      return json({ ok: true, order: body.order ?? [], reset: null });
+      return json({ ok: true, order: body.order ?? [], recovery: null });
     }
+    case '/config/create':
+      return json({ ok: true, created: true, present: true });
     default:
       return json({}, 404);
   }
@@ -446,6 +494,10 @@ type ServiceErrorCase = {
 
 const SERVICE_ERRORS: ServiceErrorCase[] = [
   { kind: 'bad-request', expected: 'The panel asked for something the service does not serve.' },
+  {
+    kind: 'config-conflict',
+    expected: 'The config file changed on disk. Nothing was overwritten; retry.',
+  },
   { kind: 'internal', expected: 'The local service failed to build an answer.' },
   {
     kind: 'upstream-unauthorized',
@@ -690,6 +742,38 @@ describe('card order', () => {
     expect(text(note)).toBe('order not saved');
     expect(note.title).toBe('The config file could not be written.');
     expect(cardKeys()).toEqual([OPENROUTER_KEY, DEEPSEEK_KEY, OPENCODE_KEY]);
+
+    // A later config read must not snap the failed order back to the file.
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    expect(cardKeys()).toEqual([OPENROUTER_KEY, DEEPSEEK_KEY, OPENCODE_KEY]);
+  });
+
+  test('a save with a recovery notice reloads /config at once', async () => {
+    const host = makeHost((request) => {
+      if (request.path === '/config/order') {
+        const body = request.body ? (JSON.parse(request.body) as { order?: string[] }) : {};
+        return json({
+          ok: true,
+          order: body.order ?? [],
+          recovery: {
+            at: '2026-11-07T00:00:00.000Z',
+            restored: ['baseUrl'],
+            defaulted: ['apiKey'],
+            previousText: 'appended-comments',
+          },
+        });
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+    host.requests.length = 0;
+
+    pressKey(0, 'ArrowDown');
+    await tick();
+
+    expect(host.requests.map((request) => request.path)).toContain('/config');
   });
 
   test('Home and End move the focused card to the ends', async () => {
@@ -941,13 +1025,29 @@ describe('font scale', () => {
   });
 
   test('an invalid scale falls back to 100 and explains why', async () => {
-    const host = makeHost(withConfig(configReport({ fontScale: 100, fontScaleInvalid: true })));
+    const host = makeHost(
+      withConfig(
+        configReport({
+          fontScale: 100,
+          fontScaleInvalid: true,
+          issues: [
+            {
+              field: 'fontScale',
+              kind: 'invalid',
+              message: 'fontScale must be an integer from 50 to 200.',
+            },
+          ],
+        }),
+      ),
+    );
     start(host);
     await tick();
 
     expect(dom.document.documentElement.style.fontSize).toBe('14px');
     const issues = [...root.querySelectorAll('.issue')].map((node) => text(node));
     expect(issues.some((issue) => issue.includes('50 to 200'))).toBe(true);
+    // The localized notice replaces the service's English duplicate.
+    expect(issues.some((issue) => issue.includes('fontScale must be'))).toBe(false);
   });
 
   test('a config without fontScale falls back to 100%', async () => {
@@ -1041,6 +1141,343 @@ describe('chart labels', () => {
     await tick();
     expect(shownLabels()).toHaveLength(7);
     expect(root.querySelectorAll('.bar-label')).toHaveLength(7);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Configuration card                                                         */
+/* -------------------------------------------------------------------------- */
+
+const INIT_KEY = 'openchamber-magpie-usage:v1:config-initialized';
+
+const configCard = (): HTMLElement => root.querySelector('.card.config') as HTMLElement;
+const configHead = (): HTMLButtonElement =>
+  root.querySelector('.config-head') as HTMLButtonElement;
+const configBodyEl = (): HTMLElement => root.querySelector('.config-body') as HTMLElement;
+const configStatusText = (): string => text(root.querySelector('.config-status'));
+const configPathButton = (): HTMLButtonElement =>
+  root.querySelector('.config-path') as HTMLButtonElement;
+
+const missingReport = (overrides: Partial<ConfigReport> = {}): ConfigReport =>
+  configReport({
+    present: false,
+    source: 'default',
+    validity: 'missing',
+    baseUrl: 'http://127.0.0.1:3425',
+    host: '127.0.0.1:3425',
+    loopback: true,
+    apiKeyConfigured: false,
+    issue: null,
+    issues: [],
+    ...overrides,
+  });
+
+describe('configuration card shell', () => {
+  test('is last before the footer, collapsed by default, and toggles with its header', async () => {
+    const host = makeHost();
+    start(host);
+    await tick();
+
+    expect(configCard()).toBeDefined();
+    expect(configCard().nextElementSibling?.className).toBe('footer');
+    expect(root.querySelectorAll('.quotas .card.config').length).toBe(0);
+    expect(configBodyEl().hidden).toBe(true);
+    expect(configHead().getAttribute('aria-expanded')).toBe('false');
+    expect(configHead().getAttribute('aria-controls')).toBe('config-body');
+    expect(configBodyEl().id).toBe('config-body');
+    expect(configHead().getAttribute('draggable')).toBeNull();
+    expect(configHead().querySelector('.quo-logo')).toBeNull();
+
+    configHead().click();
+    expect(configBodyEl().hidden).toBe(false);
+    expect(configHead().getAttribute('aria-expanded')).toBe('true');
+
+    // Refresh and a repeated snapshot do not reset the fold.
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await tick();
+    expect(configBodyEl().hidden).toBe(false);
+
+    host.emitReady({ locale: 'zh-CN' });
+    await tick();
+    expect(configBodyEl().hidden).toBe(false);
+  });
+
+  test('a remounted panel starts collapsed again', async () => {
+    const host = makeHost();
+    start(host);
+    await tick();
+    configHead().click();
+    expect(configBodyEl().hidden).toBe(false);
+    handle?.dispose();
+    handle = null;
+
+    const secondRoot = dom.document.createElement('div') as unknown as HTMLElement;
+    (dom.document.body as unknown as HTMLElement).append(secondRoot);
+    const secondHost = makeHost();
+    const second = mountPanel({ host: secondHost.client, root: secondRoot });
+    handle = second;
+    secondHost.emitReady();
+    await tick();
+    expect((secondRoot.querySelector('.config-body') as HTMLElement).hidden).toBe(true);
+  });
+
+  test('the header reports only file validity and unsupported language', async () => {
+    const gate = makeHost((request) =>
+      request.path === '/config'
+        ? new Promise((resolve) => {
+            setTimeout(() => resolve(json(configReport())), 5);
+          })
+        : respondOk(request),
+    );
+    handle = start(gate);
+    await tick();
+    expect(configStatusText()).toBe('Checking…');
+
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(configStatusText()).toBe('Valid');
+
+    const remount = (host: FakeHost): void => {
+      handle?.dispose();
+      handle = null;
+      root.replaceChildren();
+      handle = start(host);
+    };
+
+    const invalid = makeHost(withConfig(configReport({ validity: 'invalid', fontScaleInvalid: true })));
+    remount(invalid);
+    await tick();
+    expect(configStatusText()).toBe('Invalid');
+
+    remount(makeHost(withConfig(missingReport())));
+    await tick();
+    expect(configStatusText()).toBe('Not created');
+
+    remount(
+      makeHost(
+        withConfig(
+          missingReport({
+            validity: 'unreadable',
+            issue: { kind: 'unreadable', message: 'The config file could not be read.' },
+            issues: [
+              { field: 'document', kind: 'unreadable', message: 'The config file could not be read.' },
+            ],
+          }),
+        ),
+      ),
+    );
+    await tick();
+    expect(configStatusText()).toBe('Unreadable');
+
+    remount(makeHost(withConfig(configReport({ language: 'fr' }))));
+    await tick();
+    expect(configStatusText()).toBe('Invalid');
+  });
+
+  test('the full path is a focusable copy button with success and failure feedback', async () => {
+    const host = makeHost();
+    start(host);
+    await tick();
+
+    expect(configPathButton().tagName).toBe('BUTTON');
+    expect(configPathButton().type).toBe('button');
+    expect(configPathButton().tabIndex).toBe(0);
+    expect(text(configPathButton())).toBe(
+      '/home/tester/.config/openchamber-magpie-usage/config.jsonc',
+    );
+
+    configHead().click();
+    configPathButton().click();
+    await tick();
+    expect(host.state.clipboard).toEqual([
+      '/home/tester/.config/openchamber-magpie-usage/config.jsonc',
+    ]);
+    expect(text(root.querySelector('.config-copy'))).toBe('Path copied.');
+    // Copying never folds the card.
+    expect(configBodyEl().hidden).toBe(false);
+
+    host.state.clipboardError = new Error('clipboard denied');
+    configPathButton().click();
+    await tick();
+    expect(text(root.querySelector('.config-copy'))).toContain('clipboard denied');
+    expect(configBodyEl().hidden).toBe(false);
+  });
+
+  test('recovery details live in the body, not in the title', async () => {
+    const host = makeHost(
+      withConfig(
+        configReport({
+          validity: 'invalid',
+          issue: { kind: 'invalid-json', message: 'The config file is not valid JSONC.' },
+          issues: [{ field: 'document', kind: 'invalid-json', message: 'The config file is not valid JSONC.' }],
+          recovery: {
+            at: '2026-11-07T00:00:00.000Z',
+            restored: ['baseUrl'],
+            defaulted: ['apiKey'],
+            previousText: 'appended-comments',
+          },
+        }),
+      ),
+    );
+    start(host);
+    await tick();
+
+    configHead().click();
+    const bodyText = text(configBodyEl());
+    expect(bodyText).toContain('Restored: baseUrl');
+    expect(bodyText).toContain('Defaults used: apiKey');
+    expect(bodyText).toContain('previous text is kept as comments');
+    expect(text(configHead())).not.toContain('Restored');
+    expect(configStatusText()).toBe('Invalid');
+  });
+});
+
+describe('configuration creation', () => {
+  test('a completed marker plus a missing file shows the button, never auto-creates', async () => {
+    const host = makeHost(withConfig(missingReport()));
+    host.state.storage.values.set(INIT_KEY, { version: 1 });
+    start(host);
+    await tick();
+
+    expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+    configHead().click();
+    expect((root.querySelector('.config-create') as HTMLElement).hidden).toBe(false);
+    expect((root.querySelector('.config-create .config-action') as HTMLButtonElement).textContent).toBe(
+      'Create config file',
+    );
+  });
+
+  test('first open with no marker and no file creates once, then remembers', async () => {
+    let present = false;
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(present ? configReport() : missingReport());
+      if (request.path === '/config/create') {
+        present = true;
+        return json({ ok: true, created: true, present: true });
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await tick();
+
+    const creates = host.requests.filter((request) => request.path === '/config/create');
+    expect(creates.length).toBe(1);
+    expect(JSON.parse(creates[0]?.body ?? '{}')).toEqual({ order: [] });
+    expect(host.state.storage.values.get(INIT_KEY)).toMatchObject({ version: 1 });
+    expect(configStatusText()).toBe('Valid');
+
+    host.emitReady();
+    await tick();
+    expect(host.requests.filter((request) => request.path === '/config/create').length).toBe(1);
+  });
+
+  test('an existing file is not overwritten; the marker is written instead', async () => {
+    const host = makeHost();
+    start(host);
+    await tick();
+
+    expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+    expect(host.state.storage.values.get(INIT_KEY)).toMatchObject({ version: 1 });
+  });
+
+  test('a storage read failure does not auto-create and leaves the manual button usable', async () => {
+    const host = makeHost(withConfig(missingReport()));
+    host.state.storage.getError = new Error('storage unavailable');
+    start(host);
+    await tick();
+
+    expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
+    configHead().click();
+    const issues = [...root.querySelectorAll('.config-body .issue')].map((node) => text(node)).join(' ');
+    expect(issues).toContain('storage unavailable');
+    expect((root.querySelector('.config-create') as HTMLElement).hidden).toBe(false);
+  });
+
+  test('the confirm/cancel flow posts only intent and order, then refreshes', async () => {
+    let present = false;
+    let release!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(present ? configReport() : missingReport());
+      if (request.path === '/config/create') {
+        return createGate.then(() => {
+          present = true;
+          return json({ ok: true, created: true, present: true });
+        });
+      }
+      return respondOk(request);
+    });
+    host.state.storage.values.set(INIT_KEY, { version: 1 });
+    start(host);
+    await tick();
+
+    configHead().click();
+    (root.querySelector('.config-create .config-action') as HTMLButtonElement).click();
+    expect((root.querySelector('.config-confirm') as HTMLElement).hidden).toBe(false);
+    const yes = root.querySelectorAll<HTMLButtonElement>('.config-confirm .config-action')[0];
+    const no = root.querySelectorAll<HTMLButtonElement>('.config-confirm .config-action')[1];
+    expect(no?.textContent).toBe('Cancel');
+    yes?.click();
+    await tick();
+    expect(yes?.disabled).toBe(true);
+    expect(text(root.querySelector('.config-create-status'))).toBe('Creating…');
+
+    release();
+    await tick();
+    await tick();
+    const creates = host.requests.filter((request) => request.path === '/config/create');
+    expect(creates.length).toBe(1);
+    expect(JSON.parse(creates[0]?.body ?? '{}')).toEqual({ order: [] });
+    expect(host.requests.some((request) => request.path === '/config' && request.method === 'GET')).toBe(true);
+    expect(configStatusText()).toBe('Valid');
+  });
+
+  test('a failed create keeps the button usable for a retry', async () => {
+    let attempts = 0;
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(missingReport());
+      if (request.path === '/config/create') {
+        attempts += 1;
+        return json({ error: { kind: 'internal', message: 'The config file could not be written.' } }, 500);
+      }
+      return respondOk(request);
+    });
+    host.state.storage.values.set(INIT_KEY, { version: 1 });
+    start(host);
+    await tick();
+
+    configHead().click();
+    (root.querySelector('.config-create .config-action') as HTMLButtonElement).click();
+    const yes = root.querySelectorAll<HTMLButtonElement>('.config-confirm .config-action')[0];
+    yes?.click();
+    await tick();
+    expect(text(root.querySelector('.config-create-status'))).toContain('could not be written');
+    expect(yes?.disabled).toBe(false);
+
+    yes?.click();
+    await tick();
+    expect(attempts).toBe(2);
+  });
+
+  test('a marker write failure after creation does not roll the file back or claim success', async () => {
+    let present = false;
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(present ? configReport() : missingReport());
+      if (request.path === '/config/create') {
+        present = true;
+        return json({ ok: true, created: true, present: true });
+      }
+      return respondOk(request);
+    });
+    host.state.storage.setError = new Error('marker write failed');
+    start(host);
+    await tick();
+
+    expect(present).toBe(true);
+    expect(host.state.storage.values.get(INIT_KEY)).toBeUndefined();
+    expect(text(root.querySelector('.config-body'))).toContain('marker write failed');
+    expect(configStatusText()).toBe('Valid');
   });
 });
 

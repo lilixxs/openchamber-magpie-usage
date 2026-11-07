@@ -3,8 +3,9 @@
 //
 // Routes:
 //   GET    /health                     unchanged contract
-//   GET    /config                     config path, endpoint, key present, card order
-//   POST   /config/order               merge `cardOrder` into the config file
+//   GET    /config                     path, endpoint, validity, card order
+//   POST   /config/create              idempotent creation of the JSONC file
+//   POST   /config/order               merge `cardOrder`, or rebuild a damaged file
 //   GET    /v1/magpie/usage?period=    normalised usage summary
 //   GET    /v1/magpie/quotas[?kept=1]  normalised quota cards
 //   GET    /v1/magpie/quotas?refresh=1 a fresh read, throttled
@@ -16,16 +17,16 @@ import {
   decodeQuotas,
   decodeUsage,
   isPeriod,
+  type ConfigRecovery,
   type ConfigReport,
   type QuotaCard,
   type QuotaReport,
-  type ResetNotice,
   type ServiceErrorBody,
   type ServiceErrorKind,
   type UsageReport,
 } from '../shared/magpie.ts';
 import { defaultConfigPath, readConfig } from './config.ts';
-import { saveCardOrder } from './config-write.ts';
+import { ConfigWriteError, createConfigFile, saveCardOrder } from './config-write.ts';
 import { requestUpstream, type UpstreamFailure } from './upstream.ts';
 import { SERVICE_API_VERSION, SERVICE_NAME } from '../shared/health.ts';
 
@@ -33,12 +34,14 @@ export type ServiceOptions = {
   /** 0 asks the OS for a free port. */
   port: number;
   token: string;
-  /** Defaults to `~/.config/openchamber-magpie-usage/config.json`. */
+  /** Defaults to `~/.config/openchamber-magpie-usage/config.jsonc`. */
   configPath?: string;
   /** Upstream read timeout. Defaults to 15 s. */
   upstreamTimeoutMs?: number;
   /** Shortest gap between two fresh quota reads. Defaults to 30 s. */
   refreshMinIntervalMs?: number;
+  /** Test seam: runs between the fresh read and the publish check of an order save. */
+  beforeConfigPublish?: (path: string) => void | Promise<void>;
   now?: () => number;
   /** Test seam; defaults to the runtime `fetch`. */
   fetchImpl?: typeof fetch;
@@ -62,6 +65,7 @@ const writeJson = (response: ServerResponse, status: number, body: unknown): voi
 
 const statusFor = (kind: ServiceErrorKind): number => {
   if (kind === 'bad-request') return 400;
+  if (kind === 'config-conflict') return 409;
   if (kind === 'internal') return 500;
   if (kind === 'upstream-timeout') return 504;
   return 502;
@@ -110,17 +114,11 @@ const readBody = (request: IncomingMessage): Promise<BodyRead> =>
     request.on('error', reject);
   });
 
-/** `{ "order": string[] }` with 1–500 keys of 1–200 characters each, or `null`. */
-const parseOrderBody = (text: string): string[] | null => {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!isRecord(value) || !Array.isArray(value.order)) return null;
-  const raw: unknown[] = value.order;
-  if (raw.length === 0 || raw.length > MAX_CARD_ORDER) return null;
+/** 0–500 keys of 1–200 characters each. */
+const parseOrderArray = (raw: unknown, allowEmpty: boolean): string[] | null => {
+  if (!Array.isArray(raw)) return null;
+  if (!allowEmpty && raw.length === 0) return null;
+  if (raw.length > MAX_CARD_ORDER) return null;
 
   const order: string[] = [];
   for (const entry of raw) {
@@ -131,6 +129,36 @@ const parseOrderBody = (text: string): string[] | null => {
   return order;
 };
 
+/** `{ "order": string[] }` with 1–500 keys, or `null`. */
+const parseOrderBody = (text: string): string[] | null => {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  return parseOrderArray(value.order, false);
+};
+
+/**
+ * `{}` or `{ "order"?: string[] }`. An empty body and an empty order are both
+ * valid: the panel sends only its intent and, when it has one, the order it
+ * currently shows. It never sends a path or config content.
+ */
+const parseCreateBody = (text: string): string[] | null => {
+  if (text.trim() === '') return [];
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  if (value.order === undefined) return [];
+  return parseOrderArray(value.order, true);
+};
+
 export const createService = (options: ServiceOptions): LocalService => {
   const {
     port,
@@ -138,6 +166,7 @@ export const createService = (options: ServiceOptions): LocalService => {
     configPath = defaultConfigPath(),
     upstreamTimeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS,
     refreshMinIntervalMs = DEFAULT_REFRESH_MIN_INTERVAL_MS,
+    beforeConfigPublish,
     now = Date.now,
     fetchImpl = fetch,
   } = options;
@@ -151,9 +180,9 @@ export const createService = (options: ServiceOptions): LocalService => {
   let lastGoodCards: QuotaCard[] | null = null;
   let lastGoodAt: number | null = null;
   let lastFreshAt: number | null = null;
-  // Set when a write had to replace an unusable file. In memory only: the
-  // panel shows it until the service restarts.
-  let resetNotice: ResetNotice | null = null;
+  // Set when a write rebuilt a damaged file. In memory only: the panel shows
+  // it until the service restarts; the previous text stays in the file comments.
+  let recoveryNotice: ConfigRecovery | null = null;
 
   const loadConfig = async () => readConfig(configPath);
 
@@ -186,12 +215,15 @@ export const createService = (options: ServiceOptions): LocalService => {
         fontScale: config.fontScale,
         fontScaleInvalid: config.fontScaleInvalid,
         cardOrder: config.cardOrder,
+        cardOrderInvalid: config.cardOrderInvalid,
         language: config.language,
         languageInvalid: config.languageInvalid,
-        reset: resetNotice,
+        recovery: recoveryNotice,
         source: config.source,
         present: config.present,
+        validity: config.validity,
         issue: config.issue,
+        issues: config.issues,
       };
       writeJson(response, 200, report);
       return;
@@ -327,12 +359,46 @@ export const createService = (options: ServiceOptions): LocalService => {
     writeJson(response, 404, { error: 'not-found' });
   };
 
-  const handleOrder = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const body = await readBody(request);
-    if (!body.ok) {
-      fail(response, 'bad-request', { message: `The order body must be JSON under ${MAX_ORDER_BODY_BYTES} bytes.` });
+  const failWrite = (response: ServerResponse, error: unknown): void => {
+    if (error instanceof ConfigWriteError) {
+      if (error.code === 'conflict') {
+        fail(response, 'config-conflict', { message: error.message });
+        return;
+      }
+      fail(response, 'internal', { message: error.message });
       return;
     }
+    fail(response, 'internal', { message: 'The config file could not be written.' });
+  };
+
+  const handleConfigWrite = async (
+    pathname: string,
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    const body = await readBody(request);
+    if (!body.ok) {
+      fail(response, 'bad-request', { message: `The body must be JSON under ${MAX_ORDER_BODY_BYTES} bytes.` });
+      return;
+    }
+
+    if (pathname === '/config/create') {
+      const order = parseCreateBody(body.text);
+      if (order === null) {
+        fail(response, 'bad-request', {
+          message: `order, when present, must be an array of 0 to ${MAX_CARD_ORDER} strings, each 1 to ${MAX_CARD_ORDER_KEY} characters.`,
+        });
+        return;
+      }
+      try {
+        const created = await createConfigFile(configPath, order);
+        writeJson(response, 200, { ok: true, created: created.created, present: created.present });
+      } catch (error) {
+        failWrite(response, error);
+      }
+      return;
+    }
+
     const order = parseOrderBody(body.text);
     if (order === null) {
       fail(response, 'bad-request', {
@@ -341,11 +407,15 @@ export const createService = (options: ServiceOptions): LocalService => {
       return;
     }
     try {
-      const saved = await saveCardOrder(configPath, order);
-      if (saved.reset) resetNotice = saved.reset;
-      writeJson(response, 200, { ok: true, order: saved.order, reset: saved.reset });
-    } catch {
-      fail(response, 'internal', { message: 'The config file could not be written.' });
+      const saved = await saveCardOrder(
+        configPath,
+        order,
+        beforeConfigPublish === undefined ? undefined : { beforePublish: beforeConfigPublish },
+      );
+      if (saved.recovery) recoveryNotice = saved.recovery;
+      writeJson(response, 200, { ok: true, order: saved.order, recovery: saved.recovery });
+    } catch (error) {
+      failWrite(response, error);
     }
   };
 
@@ -370,8 +440,11 @@ export const createService = (options: ServiceOptions): LocalService => {
           });
           return;
         }
-        if (method === 'POST' && url.pathname === '/config/order') {
-          void handleOrder(request, response).catch(() => {
+        if (
+          method === 'POST' &&
+          (url.pathname === '/config/order' || url.pathname === '/config/create')
+        ) {
+          void handleConfigWrite(url.pathname, request, response).catch(() => {
             if (!response.headersSent) fail(response, 'internal');
             else response.end();
           });

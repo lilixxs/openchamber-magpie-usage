@@ -94,8 +94,15 @@ export const makeTempDir = (): TempDir => {
 };
 
 export const writeConfig = (dir: TempDir, value: unknown): string => {
-  const path = join(dir.path, 'config.json');
+  const path = join(dir.path, 'config.jsonc');
   writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value, null, 2), 'utf8');
+  return path;
+};
+
+/** Writes raw text to a named config file, for JSONC and migration tests. */
+export const writeConfigText = (dir: TempDir, text: string, name = 'config.jsonc'): string => {
+  const path = join(dir.path, name);
+  writeFileSync(path, text, 'utf8');
   return path;
 };
 

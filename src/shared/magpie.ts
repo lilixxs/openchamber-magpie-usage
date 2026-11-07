@@ -20,7 +20,12 @@ export const MIN_FONT_SCALE = 50;
 export const MAX_FONT_SCALE = 200;
 
 export const CONFIG_DIR_NAME = 'openchamber-magpie-usage';
-export const CONFIG_FILE_NAME = 'config.json';
+/**
+ * The only runtime file. The old `config.json` is deliberately not read: the
+ * format change to JSONC is a manual migration, documented in
+ * `docs/config-migration.md`.
+ */
+export const CONFIG_FILE_NAME = 'config.jsonc';
 /** Shown in the README and in error text; the service reports the absolute path. */
 export const CONFIG_RELATIVE_PATH = `~/.config/${CONFIG_DIR_NAME}/${CONFIG_FILE_NAME}`;
 
@@ -37,21 +42,53 @@ export const isPeriod = (value: unknown): value is Period =>
 
 export type ConfigSource = 'file' | 'default';
 
-export type ConfigIssueKind = 'invalid-json' | 'invalid' | 'unreadable';
+export type ConfigIssueKind =
+  | 'invalid-json'
+  | 'duplicate-key'
+  | 'invalid'
+  | 'unreadable';
+
+/**
+ * The file's overall state. `missing` and `unreadable` are deliberately
+ * separate: a permissions failure is not an invitation to create the file.
+ */
+export type ConfigValidity = 'missing' | 'valid' | 'invalid' | 'unreadable';
+
+/** Known config keys, plus `document` for a problem with the file as a whole. */
+export type ConfigField =
+  | 'document'
+  | 'baseUrl'
+  | 'apiKey'
+  | 'refreshSeconds'
+  | 'fontScale'
+  | 'cardOrder'
+  | 'language';
+
+/** One safe, displayable problem. Never carries the key or the file text. */
+export type ConfigFieldIssue = {
+  field: ConfigField;
+  kind: ConfigIssueKind;
+  message: string;
+};
 
 /** Ceilings for `cardOrder`, so a runaway list cannot bloat the config file. */
 export const MAX_CARD_ORDER = 500;
 export const MAX_CARD_ORDER_KEY = 200;
 
 /**
- * A config file the service had to replace. The panel shows it rather than
- * letting the parse error disappear with the rewrite.
+ * What the service did when it had to rebuild a structurally damaged file.
+ * The previous text stays in the same file as line comments; no separate
+ * backup is created. In memory only: a service restart clears it.
  */
-export type ResetNotice = {
-  /** When the reset happened, ISO 8601. */
+export type ConfigRecovery = {
+  /** When the rebuild happened, ISO 8601. */
   at: string;
-  /** Where the unusable file was copied. */
-  backupPath: string;
+  /** Known fields restored from provable top-level properties. */
+  restored: ConfigField[];
+  /** Known fields that fell back to defaults. */
+  defaulted: ConfigField[];
+  /** The previous text is appended to the same file as comments. */
+  previousText: 'appended-comments';
 };
 
 export type ConfigIssue = {
@@ -77,6 +114,8 @@ export type ServiceConfig = {
   fontScaleInvalid: boolean;
   /** Quota card order, oldest first. Lenient: a bad value never breaks the rest. */
   cardOrder: string[];
+  /** True when `cardOrder` was present but not a clean array of valid keys. */
+  cardOrderInvalid: boolean;
   /** Language setting; `auto` when missing or unusable. */
   language: string;
   /** True when `language` was present but not a non-empty string. */
@@ -84,7 +123,12 @@ export type ServiceConfig = {
   source: ConfigSource;
   /** Whether a config file was found at the configured path. */
   present: boolean;
+  /** Overall file state, for the card title. */
+  validity: ConfigValidity;
+  /** Document-level or fatal issue; field-level notices are in `issues`. */
   issue: ConfigIssue | null;
+  /** Every known problem, safe to display. Never carries the key. */
+  issues: ConfigFieldIssue[];
 };
 
 /** What `/config` answers. Deliberately has no field that can carry the key. */
@@ -98,15 +142,18 @@ export type ConfigReport = {
   fontScale: number;
   fontScaleInvalid: boolean;
   cardOrder: string[];
+  cardOrderInvalid: boolean;
   /** Language setting; `auto` when missing or unusable. */
   language: string;
   /** True when `language` was present but not a non-empty string. */
   languageInvalid: boolean;
-  /** Present after the service replaced an unusable file; `null` otherwise. */
-  reset: ResetNotice | null;
+  /** Present after the service rebuilt a damaged file; `null` otherwise. */
+  recovery: ConfigRecovery | null;
   source: ConfigSource;
   present: boolean;
+  validity: ConfigValidity;
   issue: ConfigIssue | null;
+  issues: ConfigFieldIssue[];
 };
 
 export const fallbackConfig = (): ServiceConfig => ({
@@ -118,11 +165,14 @@ export const fallbackConfig = (): ServiceConfig => ({
   fontScale: DEFAULT_FONT_SCALE,
   fontScaleInvalid: false,
   cardOrder: [],
+  cardOrderInvalid: false,
   language: DEFAULT_LANGUAGE,
   languageInvalid: false,
   source: 'default',
   present: false,
+  validity: 'missing',
   issue: null,
+  issues: [],
 });
 
 const LOOPBACK_V4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
@@ -175,76 +225,142 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isControlOrSpace = /[\s\u0000-\u001f\u007f]/;
 
+export type FieldParse<T> = { ok: true; value: T } | { ok: false; message: string };
+
+/** Validates `apiKey` without ever echoing its value. */
+export const parseApiKeyValue = (raw: unknown): FieldParse<string | null> => {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string') return { ok: false, message: 'apiKey must be a string.' };
+  const key = raw.trim();
+  if (key === '') return { ok: false, message: 'apiKey is empty; remove the field instead.' };
+  if (key.length > 4096) return { ok: false, message: 'apiKey is longer than 4096 characters.' };
+  if (isControlOrSpace.test(key)) {
+    return { ok: false, message: 'apiKey must not contain whitespace or control characters.' };
+  }
+  return { ok: true, value: key };
+};
+
+export const parseRefreshSecondsValue = (raw: unknown): FieldParse<number> => {
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw)) {
+    return { ok: false, message: 'refreshSeconds must be an integer.' };
+  }
+  if (raw < MIN_REFRESH_SECONDS || raw > MAX_REFRESH_SECONDS) {
+    return {
+      ok: false,
+      message: `refreshSeconds must be between ${MIN_REFRESH_SECONDS} and ${MAX_REFRESH_SECONDS}.`,
+    };
+  }
+  return { ok: true, value: raw };
+};
+
+export const parseFontScaleValue = (raw: unknown): FieldParse<number> => {
+  if (
+    typeof raw !== 'number' ||
+    !Number.isFinite(raw) ||
+    !Number.isInteger(raw) ||
+    raw < MIN_FONT_SCALE ||
+    raw > MAX_FONT_SCALE
+  ) {
+    return { ok: false, message: `fontScale must be an integer from ${MIN_FONT_SCALE} to ${MAX_FONT_SCALE}.` };
+  }
+  return { ok: true, value: raw };
+};
+
+export const parseLanguageValue = (raw: unknown): FieldParse<string> => {
+  if (typeof raw !== 'string' || raw === '') {
+    return { ok: false, message: 'language must be a non-empty string.' };
+  }
+  return { ok: true, value: raw };
+};
+
+export type CardOrderParse = {
+  order: string[];
+  invalid: boolean;
+  message: string | null;
+};
+
 /**
  * Reads `cardOrder`. Unlike `baseUrl` and `apiKey`, a bad value is dropped
  * entry by entry: the order is cosmetic, so it can never degrade the endpoint.
+ * `invalid` is separate, so the card can report the problem without changing
+ * what the endpoint or the key do.
  */
-export const parseCardOrder = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
+export const parseCardOrderDetailed = (value: unknown): CardOrderParse => {
+  if (value === undefined) return { order: [], invalid: false, message: null };
+  if (!Array.isArray(value)) {
+    return { order: [], invalid: true, message: 'cardOrder must be an array of strings.' };
+  }
+
   const order: string[] = [];
+  let invalid = false;
   for (const entry of value) {
-    if (order.length >= MAX_CARD_ORDER) break;
-    if (typeof entry !== 'string') continue;
-    if (entry.length === 0 || entry.length > MAX_CARD_ORDER_KEY) continue;
+    if (order.length >= MAX_CARD_ORDER) {
+      invalid = true;
+      break;
+    }
+    if (typeof entry !== 'string' || entry.length === 0 || entry.length > MAX_CARD_ORDER_KEY) {
+      invalid = true;
+      continue;
+    }
     order.push(entry);
   }
-  return order;
+
+  return {
+    order,
+    invalid,
+    message: invalid
+      ? `cardOrder entries must be non-empty strings of at most ${MAX_CARD_ORDER_KEY} characters; bad entries were dropped.`
+      : null,
+  };
 };
 
-const parseConfigObject = (value: Record<string, unknown>): { ok: true; config: ServiceConfig } | { ok: false; message: string } => {
+export const parseCardOrder = (value: unknown): string[] => parseCardOrderDetailed(value).order;
+
+export type ConfigObjectParse =
+  | { ok: true; config: ServiceConfig; issues: ConfigFieldIssue[] }
+  | { ok: false; field: ConfigField; message: string };
+
+/**
+ * Reads the six known keys from a root object. Fatal endpoint, key, and
+ * interval errors fall back to the whole default config; `fontScale`,
+ * `language`, and `cardOrder` are lenient and never degrade the endpoint.
+ */
+export const parseConfigObject = (value: Record<string, unknown>): ConfigObjectParse => {
   let baseUrl = DEFAULT_BASE_URL;
   let host = '127.0.0.1:3425';
   let loopback = true;
 
   if (value.baseUrl !== undefined) {
-    if (typeof value.baseUrl !== 'string') return { ok: false, message: 'baseUrl must be a string.' };
+    if (typeof value.baseUrl !== 'string') return { ok: false, field: 'baseUrl', message: 'baseUrl must be a string.' };
     const parsed = normaliseBaseUrl(value.baseUrl);
-    if (!parsed.ok) return { ok: false, message: parsed.message };
+    if (!parsed.ok) return { ok: false, field: 'baseUrl', message: parsed.message };
     baseUrl = parsed.baseUrl;
     host = parsed.host;
     loopback = parsed.loopback;
   }
 
-  let apiKey: string | null = null;
-  if (value.apiKey !== undefined && value.apiKey !== null) {
-    if (typeof value.apiKey !== 'string') return { ok: false, message: 'apiKey must be a string.' };
-    const key = value.apiKey.trim();
-    if (key === '') return { ok: false, message: 'apiKey is empty; remove the field instead.' };
-    if (key.length > 4096) return { ok: false, message: 'apiKey is longer than 4096 characters.' };
-    if (isControlOrSpace.test(key)) return { ok: false, message: 'apiKey must not contain whitespace or control characters.' };
-    apiKey = key;
-  }
+  const apiKeyResult = parseApiKeyValue(value.apiKey);
+  if (!apiKeyResult.ok) return { ok: false, field: 'apiKey', message: apiKeyResult.message };
 
   let refreshSeconds = DEFAULT_REFRESH_SECONDS;
   if (value.refreshSeconds !== undefined) {
-    const raw = value.refreshSeconds;
-    if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw)) {
-      return { ok: false, message: 'refreshSeconds must be an integer.' };
-    }
-    if (raw < MIN_REFRESH_SECONDS || raw > MAX_REFRESH_SECONDS) {
-      return {
-        ok: false,
-        message: `refreshSeconds must be between ${MIN_REFRESH_SECONDS} and ${MAX_REFRESH_SECONDS}.`,
-      };
-    }
-    refreshSeconds = raw;
+    const parsed = parseRefreshSecondsValue(value.refreshSeconds);
+    if (!parsed.ok) return { ok: false, field: 'refreshSeconds', message: parsed.message };
+    refreshSeconds = parsed.value;
   }
+
+  const issues: ConfigFieldIssue[] = [];
 
   // A bad type scale is cosmetic: keep the endpoint and key and fall back to 100.
   let fontScale = DEFAULT_FONT_SCALE;
   let fontScaleInvalid = false;
   if (value.fontScale !== undefined) {
-    const raw = value.fontScale;
-    if (
-      typeof raw !== 'number' ||
-      !Number.isFinite(raw) ||
-      !Number.isInteger(raw) ||
-      raw < MIN_FONT_SCALE ||
-      raw > MAX_FONT_SCALE
-    ) {
-      fontScaleInvalid = true;
+    const parsed = parseFontScaleValue(value.fontScale);
+    if (parsed.ok) {
+      fontScale = parsed.value;
     } else {
-      fontScale = raw;
+      fontScaleInvalid = true;
+      issues.push({ field: 'fontScale', kind: 'invalid', message: parsed.message });
     }
   }
 
@@ -254,72 +370,41 @@ const parseConfigObject = (value: Record<string, unknown>): { ok: true; config: 
   let language = DEFAULT_LANGUAGE;
   let languageInvalid = false;
   if (value.language !== undefined) {
-    if (typeof value.language === 'string' && value.language !== '') language = value.language;
-    else languageInvalid = true;
+    const parsed = parseLanguageValue(value.language);
+    if (parsed.ok) language = parsed.value;
+    else {
+      languageInvalid = true;
+      issues.push({ field: 'language', kind: 'invalid', message: parsed.message });
+    }
+  }
+
+  const cardOrder = parseCardOrderDetailed(value.cardOrder);
+  if (cardOrder.invalid) {
+    issues.push({ field: 'cardOrder', kind: 'invalid', message: cardOrder.message ?? 'cardOrder is invalid.' });
   }
 
   return {
     ok: true,
+    issues,
     config: {
       baseUrl,
       host,
       loopback,
-      apiKey,
+      apiKey: apiKeyResult.value,
       refreshSeconds,
       fontScale,
       fontScaleInvalid,
-      cardOrder: parseCardOrder(value.cardOrder),
+      cardOrder: cardOrder.order,
+      cardOrderInvalid: cardOrder.invalid,
       language,
       languageInvalid,
       source: 'file',
       present: true,
+      validity: issues.length === 0 ? 'valid' : 'invalid',
       issue: null,
+      issues,
     },
   };
-};
-
-/**
- * Parses the config file text. Anything unusable yields the fallback endpoint
- * plus an issue the panel shows, so a typo never leaves the panel blank.
- */
-export const parseConfigText = (text: string): { config: ServiceConfig } => {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return {
-      config: {
-        ...fallbackConfig(),
-        present: true,
-        source: 'file',
-        issue: { kind: 'invalid-json', message: 'The config file is not valid JSON.' },
-      },
-    };
-  }
-
-  if (!isRecord(value)) {
-    return {
-      config: {
-        ...fallbackConfig(),
-        present: true,
-        source: 'file',
-        issue: { kind: 'invalid', message: 'The config file must hold a JSON object.' },
-      },
-    };
-  }
-
-  const parsed = parseConfigObject(value);
-  if (!parsed.ok) {
-    return {
-      config: {
-        ...fallbackConfig(),
-        present: true,
-        source: 'file',
-        issue: { kind: 'invalid', message: parsed.message },
-      },
-    };
-  }
-  return { config: parsed.config };
 };
 
 /* -------------------------------------------------------------------------- */
@@ -514,7 +599,8 @@ const readCard = (value: unknown): QuotaCard | null => {
   const name = text(value.name) ?? provider;
   return {
     provider,
-    name: name ?? 'Unnamed card',
+    // Empty when neither name nor provider exists; the panel localizes it.
+    name: name ?? '',
     kind: text(value.kind),
     plan: text(value.plan),
     user: text(value.user),
@@ -601,6 +687,7 @@ export const applyCardOrder = (cards: QuotaCard[], order: string[]): OrderedCard
 
 export type ServiceErrorKind =
   | 'bad-request'
+  | 'config-conflict'
   | 'internal'
   | 'upstream-unauthorized'
   | 'upstream-forbidden'
@@ -625,6 +712,8 @@ export const describeServiceError = (kind: ServiceErrorKind | undefined): string
   switch (kind) {
     case 'bad-request':
       return 'The panel asked for something the service does not serve.';
+    case 'config-conflict':
+      return 'The config file changed on disk. Nothing was overwritten; retry.';
     case 'internal':
       return 'The local service failed to build an answer.';
     case 'upstream-unauthorized':
