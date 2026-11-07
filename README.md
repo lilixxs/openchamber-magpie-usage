@@ -87,7 +87,7 @@ The `today` / `7d` / `30d` switch changes the upstream period.
 
 ### Trend
 
-The panel draws one bar per upstream `series` bucket. Each bar is split into input (including cache) and output. When there are too many buckets, labels are thinned to 6 or 5; the last bar always keeps its label. Above `fontScale` 125% the labels thin further: every other day for a 7-day series, every eighth bucket for a 24- or 30-bucket series.
+The panel draws one bar per upstream `series` bucket. Each bar is split into input (including cache) and output. Each bar has a label cell beneath it. The chart shows a fixed number of labels: seven for the 30-day period (`MM-DD`, from each bucket's date) and six for the 24-hour period (`HH`, the hour). The first label is aligned to the first bar's left edge, the last to the last bar's right edge, and the rest are centred under their bars. Labels are horizontal and do not depend on `fontScale`. Wrapping of labels that would crowd each other is not implemented yet, so at a large `fontScale` the gap between two labels can shrink below two characters.
 
 <table>
 <tr>
@@ -199,7 +199,7 @@ An upstream failure becomes an error card with the service's error category, sta
 
 The panel uses the host font stack: `--oc-font` and `--oc-mono` come from OpenChamber's theme, so the panel renders with whatever fonts the host renders with. The extension ships no font files, no `@font-face` rules, and no font licence text or font provenance manifest.
 
-Every type size in the panel is in rem. `fontScale` in `config.json` sets the root font-size to `14px × fontScale / 100`, so 100 renders the 14px base; the type was authored at 12px, so 100% is also 14/12 of the old sizes (about +16.7%). `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting: the host does not pass that percentage to guest frames — SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root — so the Configuration card shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber. An invalid `fontScale` falls back to 100 and produces a visible issue; the endpoint and the API key are not degraded. Chart labels are also tied to the scale: above 125% they thin out (see [Trend](#trend)).
+Every type size in the panel is in rem. `fontScale` in `config.json` sets the root font-size to `14px × fontScale / 100`, so 100 renders the 14px base; the type was authored at 12px, so 100% is also 14/12 of the old sizes (about +16.7%). `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting: the host does not pass that percentage to guest frames — SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root — so the Configuration card shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber. An invalid `fontScale` falls back to 100 and produces a visible issue; the endpoint and the API key are not degraded. Chart labels do not depend on the scale; their count is fixed (see [Trend](#trend)).
 
 ### Configuration and language
 
@@ -339,7 +339,7 @@ CI runs `bun install --frozen-lockfile`, `bun run check`, and `git diff --exit-c
 
 ### Test coverage
 
-`bun test` runs 226 tests in 12 files, all offline: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
+`bun test` runs 225 tests in 12 files, all offline: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory.
 
 | File | Coverage |
 | --- | --- |
@@ -352,14 +352,14 @@ CI runs `bun install --frozen-lockfile`, `bun run check`, and `git diff --exit-c
 | `tests/quotas.test.ts` | All card variants, `kept`/`refresh` forwarding, throttling, empty-cache fallback, cross-origin redirect rejection, same-origin redirect following. |
 | `tests/secret.test.ts` | The key never appears in `/config`, logs, or build artifacts; no key literal in source. |
 | `tests/panel-bundle.test.ts` | The panel is a classic IIFE, has no fetch/XHR, uses no storage, uses only `--oc-*`, mounts controls once outside `onReady`, inlines icons as data URIs, and contains the two-column grid and container query. |
-| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`; Arabic fallback to English with `dir=ltr`; root font-size after repeated ready; the invalid `fontScale` notice; chart label density at 100% and 150%. |
+| `tests/panel-host.test.ts` | Mounts the panel with a fake host: first-screen `/config`, usage, and `kept=1` requests; KPI and quota cards; `HostRequestError` codes and the service error vocabulary; non-JSON and shape errors without echoing upstream text; period switching only re-fetches usage; manual refresh sends `refresh=1`; throttled/stale copy; keyboard order writes `/config/order`; `order not saved`; expand/collapse; repeated `onReady` does not remount; four `serviceStatus` badges; `language` and host-locale selection, fallback, and `languageInvalid`; Arabic fallback to English with `dir=ltr`; root font-size after repeated ready; the invalid `fontScale` notice; chart labels: the `MM-DD` and `HH` text, fixed counts, and independence from `fontScale`. |
 | `tests/health.test.ts` | The shared `/health` contract used by the panel and the service. |
 | `tests/manifest.test.ts` | Manifest paths, required build artifacts, and package metadata. |
 | `tests/harness.ts`, `tests/fixtures.ts` | Fake gateway and captured payload fixtures; support files, not test suites. |
 
 ## Verification
 
-Verified on 2026-11-01. This record predates `fontScale` and the language-fallback change; the suite now has 226 passing tests in 12 files, and `bun run check` remains the gate. The hashes and sizes below refer to that build:
+Verified on 2026-11-01. This record predates `fontScale` and the language-fallback change; the suite now has 225 passing tests in 12 files, and `bun run check` remains the gate. The hashes and sizes below refer to that build:
 
 - `bun run check` passed: typecheck, 211 tests in 12 files (0 fail, 1,783 expectations), and both builds.
 - Two consecutive builds were byte-identical. SHA-256:

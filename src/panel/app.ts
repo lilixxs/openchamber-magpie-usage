@@ -16,6 +16,7 @@ import {
   PERIODS,
   applyCardOrder,
   cardOrderKeys,
+  isPeriod,
   isServiceErrorBody,
   type ConfigReport,
   type OrderedCard,
@@ -727,7 +728,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       );
     }
 
-    renderChart(usage.series);
+    renderChart(usage.series, isPeriod(usage.period) ? usage.period : state.period);
 
     setText(
       footer,
@@ -737,7 +738,35 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     setBadge('badge.ready', 'success');
   };
 
-  const renderChart = (series: UsageBucket[]): void => {
+  /** How many labels the chart row shows for a period: 7 for 30 days, 6 for 24 hours. */
+  const chartLabelCount = (period: Period): number => (period === 'today' ? 6 : 7);
+
+  /**
+   * Indices of the buckets that get a label, `count` of them. The first and last bucket
+   * are always picked; the rest are spread evenly between, so a label lands on a real bar.
+   */
+  const pickLabelIndices = (length: number, count: number): number[] => {
+    if (length <= 1) return [0];
+    const target = Math.min(count, length);
+    const picked: number[] = [];
+    for (let slot = 0; slot < target; slot += 1) {
+      picked.push(Math.round((slot * (length - 1)) / (target - 1)));
+    }
+    return [...new Set(picked)];
+  };
+
+  /**
+   * Text for one bucket's label. 24 hours uses the hour from the upstream label (`00`–`23`).
+   * 30 days uses `MM-DD` taken from the bucket's own date (the first 10 characters of `time`,
+   * which the upstream writes in the gateway's zone), so it matches the day the bar covers.
+   */
+  const chartLabelText = (bucket: UsageBucket, period: Period): string => {
+    if (period === 'today') return bucket.label;
+    const match = bucket.time ? /^\d{4}-(\d{2})-(\d{2})/.exec(bucket.time) : null;
+    return match ? `${match[1]}-${match[2]}` : bucket.label;
+  };
+
+  const renderChart = (series: UsageBucket[], period: Period): void => {
     clear(chart);
 
     if (series.length === 0) {
@@ -749,12 +778,8 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
       1,
       ...series.map((bucket) => bucket.input + bucket.cacheRead + bucket.cacheWrite + bucket.output),
     );
-    // Larger type makes dense labels wider; thin them out above 125%.
-    const scale = state.config?.fontScale ?? DEFAULT_FONT_SCALE;
-    const step = series.length <= 8 ? (scale > 125 ? 2 : 1) : series.length <= 31 ? (scale > 125 ? 8 : 6) : 5;
-
     const bars = el('div', 'bars');
-    series.forEach((bucket, index) => {
+    series.forEach((bucket) => {
       const inTokens = bucket.input + bucket.cacheRead + bucket.cacheWrite;
       const column = el('div', 'bar');
       const track = el('div', 'bar-track');
@@ -771,15 +796,28 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
         calls: formatInt(bucket.calls),
         count: bucket.calls,
       });
-      if (index % step === 0 || index === series.length - 1) {
-        column.append(el('span', 'bar-label', bucket.label));
-      } else {
-        column.append(el('span', 'bar-label'));
-      }
       bars.append(column);
     });
-
     chart.append(bars);
+
+    // One label cell per bar, so the label grid shares the bars' geometry. Only the picked
+    // buckets carry text: the first is pinned to its bar's left edge, the last to its right
+    // edge, and the rest are centred under their bar.
+    const count = chartLabelCount(period);
+    const indices = pickLabelIndices(series.length, count);
+    const slotOf = new Map<number, { edge: 'start' | 'middle' | 'end' }>();
+    indices.forEach((index, slot) => {
+      const edge = slot === 0 ? 'start' : slot === indices.length - 1 ? 'end' : 'middle';
+      slotOf.set(index, { edge });
+    });
+    const row = el('div', 'bar-labels');
+    series.forEach((bucket, index) => {
+      const cell = el('div', 'bar-cell');
+      const hit = slotOf.get(index);
+      if (hit) cell.append(el('span', `bar-label bar-label-${hit.edge}`, chartLabelText(bucket, period)));
+      row.append(cell);
+    });
+    chart.append(row);
   };
 
   const renderQuotaError = (message: string): void => {

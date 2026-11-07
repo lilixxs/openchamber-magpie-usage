@@ -54,8 +54,8 @@ Contract:
 
 - An invalid value (not an integer, or outside 50–200) falls back to 100 and sets `fontScaleInvalid`. `GET /config` reports `fontScale` and `fontScaleInvalid`, the panel shows a visible issue, and the endpoint and API key are not degraded.
 - `POST /config/order` merges only `cardOrder` and preserves `fontScale`.
-- Above 125% the chart labels thin out: every other day for a 7-day series, every eighth bucket for a 24- or 30-bucket series.
-- Coverage: `tests/config.test.ts` (parse and fallback), `tests/service.test.ts` (`/config` report), `tests/panel-host.test.ts` (root font-size after repeated ready, invalid notice, label density at 100% and 150%).
+- Chart labels are independent of `fontScale`: seven `MM-DD` labels for the 30-day period, six `HH` labels for the 24-hour period.
+- Coverage: `tests/config.test.ts` (parse and fallback), `tests/service.test.ts` (`/config` report), `tests/panel-host.test.ts` (root font-size after repeated ready, invalid notice, chart labels: text, fixed counts, independence from `fontScale`).
 
 ## Test
 
@@ -65,7 +65,7 @@ bun test tests/quotas.test.ts
 bun run check   # typecheck -> all tests -> build
 ```
 
-Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 226 passing tests in 12 files.
+Tests are hermetic: fake gateway, temporary config directory, and real HTTP round-trips between the test client and the built service. Panel tests use a fake host and happy-dom; they start no HTTP server, connect to no real host, and do not touch the user's config directory. The suite currently has 225 passing tests in 12 files.
 
 CI runs `bun install --frozen-lockfile`, `bun run check`, and:
 

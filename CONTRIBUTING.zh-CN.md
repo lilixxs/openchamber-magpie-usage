@@ -56,8 +56,8 @@ bun run typecheck      # tsc --noEmit
 
 - 非法值（非整数或越界）回退 100 并置 `fontScaleInvalid`。`GET /config` 回传 `fontScale` 与 `fontScaleInvalid`，面板显示可见提示，端点与 API 密钥不受影响。
 - `POST /config/order` 只合并 `cardOrder`，保留 `fontScale`。
-- 超过 125% 时图表标签抽稀：7 天序列隔天显示，24/30 桶序列每 8 桶显示一个。
-- 覆盖：`tests/config.test.ts`（解析与回退）、`tests/service.test.ts`（`/config` 回报）、`tests/panel-host.test.ts`（重复 ready 后的根字号、无效提示、100% 与 150% 的标签密度）。
+- 图表标签与 `fontScale` 无关：30 天 7 个 `MM-DD` 标签，24 小时 6 个 `HH` 标签。
+- 覆盖：`tests/config.test.ts`（解析与回退）、`tests/service.test.ts`（`/config` 回报）、`tests/panel-host.test.ts`（重复 ready 后的根字号、无效提示、图表标签的文本、固定数量与 `fontScale` 无关）。
 
 ## 测试
 
@@ -67,7 +67,7 @@ bun test tests/quotas.test.ts
 bun run check   # 类型检查 -> 全部测试 -> 构建
 ```
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 226 个通过的测试（12 个文件）。
+测试全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。套件当前有 225 个通过的测试（12 个文件）。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 

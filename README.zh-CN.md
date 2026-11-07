@@ -87,7 +87,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 ### 趋势
 
-面板按上游 `series` 的每个桶画一根柱。每根柱分为输入（含缓存）与输出。桶太多时标签抽稀到 6 或 5 个，最后一根始终保留标签。`fontScale` 超过 125% 时标签进一步抽稀：7 天序列隔天显示，24/30 桶序列每 8 桶显示一个。
+面板按上游 `series` 的每个桶画一根柱。每根柱分为输入（含缓存）与输出。每根柱下方有一个标签格。图表显示固定数量的标签：30 天 7 个，格式 `MM-DD`（取自每个桶的日期）；24 小时 6 个，格式 `HH`（小时）。第一个标签与第一根柱左对齐，最后一个与最后一根柱右对齐，其余居中于对应柱下。标签横排、不旋转，且与 `fontScale` 无关。标签之间的换行（间距不足时跨行）尚未实现，`fontScale` 变大时标签间距可能小于 2 个字符。
 
 <table>
 <tr>
@@ -199,7 +199,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题，面板与宿主用同一套字体渲染。扩展不携带任何字体文件、`@font-face` 规则，也没有字体许可全文或字体来源清单。
 
-面板里所有字号都用 rem。`config.json` 的 `fontScale` 把根字号设为 `14px × fontScale / 100`，因此 100 对应 14px 基准；字号按 12px 设计稿编写，所以 100% 同时是旧尺寸的 14/12（约 +16.7%）。`fontScale` 是面板对 OpenChamber 界面字号设置的手动等价物：宿主不会把该百分比传给 guest 帧——SDK 2.5.1 的 `HostReadyContext` 只带 font、mono 与 radius，`applyHostReady` 给 guest 根写 `0.875rem`——所以配置卡会显示当前百分比，并提示把 `fontScale` 设成与 OpenChamber 相同的百分比。`fontScale` 非法时回退到 100 并产生可见提示；端点与 API 密钥不受影响。图表标签同样受字号影响：超过 125% 时进一步抽稀（见[趋势](#趋势)）。
+面板里所有字号都用 rem。`config.json` 的 `fontScale` 把根字号设为 `14px × fontScale / 100`，因此 100 对应 14px 基准；字号按 12px 设计稿编写，所以 100% 同时是旧尺寸的 14/12（约 +16.7%）。`fontScale` 是面板对 OpenChamber 界面字号设置的手动等价物：宿主不会把该百分比传给 guest 帧——SDK 2.5.1 的 `HostReadyContext` 只带 font、mono 与 radius，`applyHostReady` 给 guest 根写 `0.875rem`——所以配置卡会显示当前百分比，并提示把 `fontScale` 设成与 OpenChamber 相同的百分比。`fontScale` 非法时回退到 100 并产生可见提示；端点与 API 密钥不受影响。图表标签不随字号变化，数量固定（见[趋势](#趋势)）。
 
 ### 配置与语言
 
@@ -338,7 +338,7 @@ CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit
 
 ### 测试覆盖
 
-`bun test` 共 226 个测试（12 个文件），全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试用 fake host 与 happy-dom，不启动 HTTP server、不连真实宿主、不读写用户配置目录。
+`bun test` 共 225 个测试（12 个文件），全部离线：假网关、临时配置目录，以及测试客户端与构建产物服务之间的真实 HTTP 往返。面板测试用 fake host 与 happy-dom，不启动 HTTP server、不连真实宿主、不读写用户配置目录。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -351,14 +351,14 @@ CI 运行 `bun install --frozen-lockfile`、`bun run check` 和 `git diff --exit
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
 | `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、无存储、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
-| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；100% 与 150% 下的图表标签密度。 |
+| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关。 |
 | `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
 | `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
 | `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |
 
 ## 验证
 
-2026-11-01 验证。该记录早于 `fontScale` 与语言回退改动；套件当前有 226 个通过的测试（12 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次构建：
+2026-11-01 验证。该记录早于 `fontScale` 与语言回退改动；套件当前有 225 个通过的测试（12 个文件），`bun run check` 仍是门禁。下面的哈希与字节数属于那次构建：
 
 - `bun run check` 全绿：类型检查、12 个文件共 211 个测试（0 失败、1,783 次断言）、两次构建。
 - 连续两次构建字节一致。SHA-256：

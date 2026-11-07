@@ -963,11 +963,27 @@ describe('font scale', () => {
   });
 });
 
-describe('chart label density', () => {
-  const labels = ['Oct 30', 'Oct 31', 'Nov 1', 'Nov 2', 'Nov 3', 'Nov 4', 'Nov 5'];
-  const series = labels.map((label, index) => ({
-    label,
-    time: `2026-10-${30 + index}T00:00:00.000Z`,
+describe('chart labels', () => {
+  // Thirty daily buckets with real dates, in the gateway's +08:00 zone, as the service sends them.
+  const thirtyDays = Array.from({ length: 30 }, (_, index) => {
+    const day = new Date(Date.UTC(2026, 9, 9 + index));
+    const mm = String(day.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(day.getUTCDate()).padStart(2, '0');
+    return {
+      label: `${String(day.getUTCMonth() + 1).padStart(2, '0')}-${String(day.getUTCDate()).padStart(2, '0')}`,
+      time: `2026-${mm}-${dd}T00:00:00+08:00`,
+      calls: 1,
+      input: 1000 + index,
+      output: 100 + index,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: 0,
+    };
+  });
+
+  const hours = Array.from({ length: 24 }, (_, index) => ({
+    label: String(index).padStart(2, '0'),
+    time: `2026-11-07T${String(index).padStart(2, '0')}:00:00+08:00`,
     calls: 1,
     input: 1000 + index,
     output: 100 + index,
@@ -976,68 +992,55 @@ describe('chart label density', () => {
     cost: 0,
   }));
 
-  const chartHost = (fontScale: number, buckets = series): FakeHost =>
+  const chartHost = (period: string, buckets: typeof thirtyDays, fontScale = 100): FakeHost =>
     makeHost((request) => {
       if (request.path === '/config') return json(configReport({ fontScale }));
-      if (request.path === '/v1/magpie/usage') return json(usageReport('7d', { series: buckets }));
+      if (request.path === '/v1/magpie/usage') return json(usageReport(period, { series: buckets }));
       return respondOk(request);
     });
 
+  // Each cell is one bar; the text is only in the picked cells.
   const shownLabels = (): string[] =>
-    [...root.querySelectorAll('.bar-label')].map((node) => text(node)).filter((label) => label !== '');
+    [...root.querySelectorAll('.bar-label')].map((node) => text(node));
 
-  test('shows every day at 100%', async () => {
-    start(chartHost(100));
+  test('30 days shows seven MM-DD labels, first and last pinned to their bars', async () => {
+    start(chartHost('30d', thirtyDays));
     await tick();
-    expect(shownLabels()).toEqual(labels);
+    expect(shownLabels()).toEqual(['10-09', '10-14', '10-19', '10-24', '10-28', '11-02', '11-07']);
+    expect(root.querySelector('.bar-label-start')?.textContent).toBe('10-09');
+    expect(root.querySelector('.bar-label-end')?.textContent).toBe('11-07');
   });
 
-  test('thins to every other day above 125%', async () => {
-    start(chartHost(150));
+  test('24 hours shows six HH labels', async () => {
+    start(chartHost('today', hours));
     await tick();
-    expect(shownLabels()).toEqual(['Oct 30', 'Nov 1', 'Nov 3', 'Nov 5']);
+    expect(shownLabels()).toEqual(['00', '05', '09', '14', '18', '23']);
   });
 
-  test('thins a 30-bucket series to every eighth bucket above 125%', async () => {
-    const thirty = Array.from({ length: 30 }, (_, index) => ({
-      ...series[0]!,
-      label: `D${index + 1}`,
-      input: 1000 + index,
-      output: 100 + index,
-    }));
-    start(chartHost(150, thirty));
+  test('label count does not depend on font scale', async () => {
+    start(chartHost('30d', thirtyDays, 150));
     await tick();
-    expect(shownLabels()).toEqual(['D1', 'D9', 'D17', 'D25', 'D30']);
+    expect(shownLabels()).toEqual(['10-09', '10-14', '10-19', '10-24', '10-28', '11-02', '11-07']);
   });
 
-  test('keeps every label at exactly 125% and thins at 126%', async () => {
-    start(chartHost(125));
+  test('each label sits in the cell of its own bar', async () => {
+    start(chartHost('30d', thirtyDays));
     await tick();
-    expect(shownLabels()).toEqual(labels);
+    const cells = [...root.querySelectorAll('.bar-cell')];
+    expect(cells).toHaveLength(30);
+    const labelled = cells.map((cell, index) => (cell.querySelector('.bar-label') ? index : -1)).filter((index) => index >= 0);
+    expect(labelled).toEqual([0, 5, 10, 15, 19, 24, 29]);
   });
 
-  test('thins at 126%', async () => {
-    start(chartHost(126));
+  test('a later refresh replaces the labels rather than appending to them', async () => {
+    start(chartHost('30d', thirtyDays));
     await tick();
-    expect(shownLabels()).toEqual(['Oct 30', 'Nov 1', 'Nov 3', 'Nov 5']);
-  });
-
-  test('a later config refresh re-renders the chart at the new scale', async () => {
-    let current = 100;
-    const host = makeHost((request) => {
-      if (request.path === '/config') return json(configReport({ fontScale: current }));
-      if (request.path === '/v1/magpie/usage') return json(usageReport('7d', { series }));
-      return respondOk(request);
-    });
-    start(host);
-    await tick();
-    expect(shownLabels()).toEqual(labels);
-
-    current = 150;
+    expect(shownLabels()).toHaveLength(7);
     const refresh = root.querySelector('.refresh-slot button') as HTMLButtonElement;
     refresh.click();
     await tick();
-    expect(shownLabels()).toEqual(['Oct 30', 'Nov 1', 'Nov 3', 'Nov 5']);
+    expect(shownLabels()).toHaveLength(7);
+    expect(root.querySelectorAll('.bar-label')).toHaveLength(7);
   });
 });
 
