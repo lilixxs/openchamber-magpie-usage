@@ -49,6 +49,7 @@ import {
   tightestLeftPercent,
   type BalancePart,
 } from '../shared/quotas-view.ts';
+import { createHostFontFaces } from './fonts.ts';
 import { LOGOS, type LogoEntry } from './logos.ts';
 
 /** Monochrome gear, painted with `currentColor`; not a drag handle. */
@@ -73,6 +74,12 @@ export type PanelHandle = {
  */
 export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   let disposed = false;
+
+  /**
+   * The host's FontFace set belongs to the host document; declare the same
+   * faces here or the host's webfont never reaches this frame.
+   */
+  const hostFonts = createHostFontFaces(document);
 
   const panelName = manifest.openchamber.contributes.panel.name;
   document.title = panelName;
@@ -1731,6 +1738,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     if (disposed) return;
     // Theme and host facts are applied on every snapshot; the controls were
     // mounted once above, so a later snapshot only updates values.
+    hostFonts.apply(context.theme.tokens.font, context.theme.tokens.mono);
     applyHostReady(context, document.documentElement);
     applyFontScale(state.config?.fontScale ?? DEFAULT_FONT_SCALE);
     hostLocale = context.locale;

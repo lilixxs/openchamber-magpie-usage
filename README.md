@@ -4,7 +4,7 @@
 
 An OpenChamber right-sidebar extension for [Magpie](https://usemagpie.ai): usage totals, trends, and every quota and balance card the gateway reports.
 
-The panel never talks to the network. It calls `host.serviceRequest()`; the extension's local service performs read-only GETs against the configured Magpie endpoint and normalises the payload for the panel.
+The panel never fetches application data itself. It calls `host.serviceRequest()`; the extension's local service performs read-only GETs against the configured Magpie endpoint and normalises the payload for the panel. The one external load the browser makes for the panel is the approved interface-font file from jsDelivr (see [Typography](#typography)).
 
 ## Contents
 
@@ -198,7 +198,7 @@ An upstream failure becomes an error card with the service's error category, sta
 
 ### Typography
 
-The panel uses the host font stack: `--oc-font` and `--oc-mono` come from OpenChamber's theme, so the panel renders with whatever fonts the host renders with. The extension ships no font files, no `@font-face` rules, and no font licence text or font provenance manifest.
+The panel uses the host font stack: `--oc-font` and `--oc-mono` come from OpenChamber's theme. OpenChamber loads its interface fonts from jsDelivr into the host document, and a guest frame has its own `FontFaceSet`, so the stack alone would render the local fallback. When the stack names one of OpenChamber's bundled families (Inter, Noto Sans, Fira Code, …), `src/panel/fonts.ts` declares the same `@font-face` rules and loads the Latin WOFF2 from jsDelivr. The package declares `https://cdn.jsdelivr.net` in `contributes.origins`; the install or update dialog asks the user to approve it. A custom or system family needs no face and falls back locally. The extension ships no font files, no font licence text, and no font provenance manifest.
 
 Every type size in the panel is in rem. `fontScale` in `config.jsonc` sets the root font-size to `14px × fontScale / 100`, so 100 renders the 14px base; the type was authored at 12px, so 100% is also 14/12 of the old sizes (about +16.7%). `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting: the host does not pass that percentage to guest frames — SDK 2.5.1's `HostReadyContext` carries font, mono, and radius only, and `applyHostReady` writes `0.875rem` on the guest root — so the Configuration card shows the active percentage and a note telling the user to set `fontScale` to the same percentage as OpenChamber. An invalid `fontScale` falls back to 100 and produces a visible issue; the endpoint and the API key are not degraded. Chart labels do not depend on the scale; their count is fixed (see [Trend](#trend)).
 
@@ -219,7 +219,7 @@ The body shows the full actual config file path — it wraps instead of being tr
 </tr>
 </table>
 
-The panel has English and Simplified Chinese copy; those are the only runtime locales. Set `language` to `en` or `zh-CN` in `config.jsonc`; `auto` follows the host locale and resolves only an exact `zh-CN` match to Chinese. `panel/locales/ar.json` stays in the repository as a `"test": true` fixture for key, plural, and direction checks, but it is no longer imported into the runtime bundle: a host locale of `ar`, or an explicit `language: "ar"`, resolves to English with `dir=ltr`. Text renders with the host font stack (`--oc-font` / `--oc-mono`), so whatever the host font supports is what appears in dynamic data — provider names, quota window names. The next refresh re-reads `/config`, so the change applies without restarting the service or OpenChamber.
+The panel has English and Simplified Chinese copy; those are the only runtime locales. Set `language` to `en` or `zh-CN` in `config.jsonc`; `auto` follows the host locale and resolves only an exact `zh-CN` match to Chinese. `panel/locales/ar.json` stays in the repository as a `"test": true` fixture for key, plural, and direction checks, but it is no longer imported into the runtime bundle: a host locale of `ar`, or an explicit `language: "ar"`, resolves to English with `dir=ltr`. Text renders with the host font stack (`--oc-font` / `--oc-mono`); the panel loads the host's Latin webfont for bundled families, and other scripts fall back to the system font, as in the host. The next refresh re-reads `/config`, so the change applies without restarting the service or OpenChamber.
 
 <img src="docs/images/config-english-openchamber.png" alt="OpenChamber Configuration card in English after setting language to en; the absolute file path is blacked out" width="860">
 
@@ -334,7 +334,7 @@ The upstream error body is not returned to the panel. Only the category, status,
 
 ## Boundaries and security
 
-- The panel runs in a sandboxed iframe and loads a classic IIFE `panel/main.js`. It cannot `fetch`, use XHR, touch `localStorage`, `sessionStorage`, IndexedDB, or cookies, or dial the local service directly. The only thing it stores is the instance-scoped first-open marker `openchamber-magpie-usage:v1:config-initialized` through the host's own storage API — never the config, the path, the key, the order, or a fold state. Order saves and config creation also go through `host.serviceRequest`; the panel makes no network request of its own.
+- The panel runs in a sandboxed iframe and loads a classic IIFE `panel/main.js`. It cannot `fetch`, use XHR, touch `localStorage`, `sessionStorage`, IndexedDB, or cookies, or dial the local service directly. The only thing it stores is the instance-scoped first-open marker `openchamber-magpie-usage:v1:config-initialized` through the host's own storage API — never the config, the path, the key, the order, or a fold state. Order saves and config creation also go through `host.serviceRequest`; the panel makes no fetch or XHR request. Its only external load is the interface-font WOFF2 that the browser requests from the approved jsDelivr origin.
 - Panel colours come only from the host's `--oc-*` variables. The stylesheet contains no hard-coded light or dark values.
 - Host controls (badge, refresh button) are mounted once at module load. A repeated `onReady` snapshot only updates values.
 - The local service runs with the current user's privileges, binds only to `127.0.0.1`, and checks the Bearer token on every request. The token is never logged.

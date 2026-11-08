@@ -4,7 +4,7 @@
 
 OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用量汇总、趋势，以及网关返回的全部额度卡与余额卡。
 
-面板从不直接联网。它只调用 `host.serviceRequest()`；扩展自带的本地服务向配置的 Magpie 端点发起只读 GET，把结果规范化后交回面板。
+面板不自行获取应用数据。它只调用 `host.serviceRequest()`；扩展自带的本地服务向配置的 Magpie 端点发起只读 GET，把结果规范化后交回面板。浏览器为面板发起的唯一外部加载，是经批准的 jsDelivr 界面字体文件（见[排版与字体](#排版与字体)）。
 
 ## 目录
 
@@ -198,7 +198,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 ### 排版与字体
 
-面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题，面板与宿主用同一套字体渲染。扩展不携带任何字体文件、`@font-face` 规则，也没有字体许可全文或字体来源清单。
+面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。OpenChamber 把界面字体从 jsDelivr 载入宿主文档；guest 帧有自己的 `FontFaceSet`，只靠字体栈会落到本地回退字体。当字体栈首项是 OpenChamber 自带的字族（Inter、Noto Sans、Fira Code 等）时，`src/panel/fonts.ts` 声明同样的 `@font-face` 规则，从 jsDelivr 载入 Latin WOFF2。包在 `contributes.origins` 中声明 `https://cdn.jsdelivr.net`，安装或更新对话框会请求用户批准。自定义或系统字族不声明字体面，直接用本地回退。扩展不携带字体文件、字体许可全文或字体来源清单。
 
 面板里所有字号都用 rem。`config.jsonc` 的 `fontScale` 把根字号设为 `14px × fontScale / 100`，因此 100 对应 14px 基准；字号按 12px 设计稿编写，所以 100% 同时是旧尺寸的 14/12（约 +16.7%）。`fontScale` 是面板对 OpenChamber 界面字号设置的手动等价物：宿主不会把该百分比传给 guest 帧——SDK 2.5.1 的 `HostReadyContext` 只带 font、mono 与 radius，`applyHostReady` 给 guest 根写 `0.875rem`——所以配置卡会显示当前百分比，并提示把 `fontScale` 设成与 OpenChamber 相同的百分比。`fontScale` 非法时回退到 100 并产生可见提示；端点与 API 密钥不受影响。图表标签不随字号变化，数量固定（见[趋势](#趋势)）。
 
@@ -219,7 +219,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 </tr>
 </table>
 
-面板提供英文与简体中文，运行时只有这两种语言。把 `config.jsonc` 的 `language` 设为 `en` 或 `zh-CN`；`auto` 跟随宿主语言，只有精确命中 `zh-CN` 才显示中文。`panel/locales/ar.json` 以 `"test": true` 夹具的形式留在仓库里，用于键、复数与方向检查，但不再打进运行时产物：宿主语言为 `ar`，或显式写 `language: "ar"`，都会解析为英文、`dir=ltr`。文字用宿主字体栈（`--oc-font` / `--oc-mono`）渲染，宿主字体支持什么就显示什么——动态数据里的供应商名、额度窗口名也不例外。下一轮刷新会重读 `/config`，不用重启服务或 OpenChamber。
+面板提供英文与简体中文，运行时只有这两种语言。把 `config.jsonc` 的 `language` 设为 `en` 或 `zh-CN`；`auto` 跟随宿主语言，只有精确命中 `zh-CN` 才显示中文。`panel/locales/ar.json` 以 `"test": true` 夹具的形式留在仓库里，用于键、复数与方向检查，但不再打进运行时产物：宿主语言为 `ar`，或显式写 `language: "ar"`，都会解析为英文、`dir=ltr`。文字用宿主字体栈（`--oc-font` / `--oc-mono`）渲染；面板为自带字族载入宿主的 Latin 网页字体，其他文字回退到系统字体，与宿主一致。下一轮刷新会重读 `/config`，不用重启服务或 OpenChamber。
 
 <img src="docs/images/config-english-openchamber.png" alt="OpenChamber 配置卡在 language 设为 en 后显示英文；绝对文件路径被涂黑" width="860">
 
@@ -334,7 +334,7 @@ upstream-redirect (跨源重定向被拒)
 
 ## 边界与安全
 
-- 面板运行在沙箱 iframe，只加载 classic IIFE 的 `panel/main.js`。它不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直接拨号到本地服务。它唯一存储的是通过宿主存储 API 写入的实例作用域首开标记 `openchamber-magpie-usage:v1:config-initialized`——绝不存配置内容、路径、密钥、顺序或折叠状态。顺序保存与创建配置同样走 `host.serviceRequest`，面板自身不发任何网络请求。
+- 面板运行在沙箱 iframe，只加载 classic IIFE 的 `panel/main.js`。它不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直接拨号到本地服务。它唯一存储的是通过宿主存储 API 写入的实例作用域首开标记 `openchamber-magpie-usage:v1:config-initialized`——绝不存配置内容、路径、密钥、顺序或折叠状态。顺序保存与创建配置同样走 `host.serviceRequest`；面板不发 `fetch` 或 XHR 请求。它唯一的外部加载，是浏览器从已批准的 jsDelivr 源请求的界面字体 WOFF2。
 - 面板颜色只用宿主注入的 `--oc-*` 变量；样式表内没有硬编码的浅色或深色值。
 - 宿主控件（徽标、刷新按钮）在模块加载时挂载一次；`onReady` 再次触发时只更新值。
 - 本地服务以当前用户权限运行，只绑 `127.0.0.1`，每个请求校验 Bearer。token 不记录。

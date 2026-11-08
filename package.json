@@ -20,7 +20,8 @@
       "service": {
         "entry": "service/main.js",
         "runtime": "host"
-      }
+      },
+      "origins": ["https://cdn.jsdelivr.net"]
     }
   },
   "scripts": {

@@ -1858,3 +1858,50 @@ describe('disposal', () => {
     expect(host.readyListeners()).toBe(0);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Host fonts                                                                 */
+/* -------------------------------------------------------------------------- */
+
+describe('host font faces', () => {
+  const style = (): HTMLStyleElement | null =>
+    dom.document.getElementById('oc-magpie-host-fonts') as HTMLStyleElement | null;
+
+  test('declares the host interface and mono families from the theme', async () => {
+    const host = makeHost();
+    start(host, {
+      theme: {
+        mode: 'dark',
+        tokens: {
+          ...THEME_TOKENS,
+          font: '"Noto Sans", "SF Pro Text", sans-serif',
+          mono: '"Fira Code", monospace',
+        },
+      },
+    });
+    await tick();
+
+    const text = style()?.textContent ?? '';
+    expect(text).toContain('font-family:"Noto Sans"');
+    expect(text).toContain('font-family:"Fira Code"');
+  });
+
+  test('leaves a system stack alone and adds each family once', async () => {
+    const host = makeHost();
+    start(host);
+    await tick();
+    expect(style()).toBeNull();
+
+    const theme = {
+      mode: 'dark' as const,
+      tokens: { ...THEME_TOKENS, font: '"Noto Sans", sans-serif', mono: '"Fira Code", monospace' },
+    };
+    host.emitReady({ theme });
+    await tick();
+    host.emitReady({ theme });
+    await tick();
+
+    const text = style()?.textContent ?? '';
+    expect(text.split('font-family:"Noto Sans"').length - 1).toBe(3);
+  });
+});

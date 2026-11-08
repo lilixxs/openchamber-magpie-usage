@@ -15,6 +15,7 @@ describe('package manifest', () => {
     if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
     expect(result.version).toBe(pkg.version);
     expect(result.manifest.contributes.panel.id).toBe('magpie-usage');
+    expect(result.manifest.contributes.origins).toEqual(['https://cdn.jsdelivr.net']);
   });
 
   test('declares entries that exist in the package', () => {

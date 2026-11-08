@@ -34,13 +34,13 @@ bun run typecheck      # tsc --noEmit
 - `jsonc-parser` 必须从 `jsonc-parser/lib/esm/main.js` 显式导入（见 `src/shared/config-document.ts`）。根导入在 Bun 的 `--node` 目标下会解析到 UMD 入口，把内部相对 `require('./impl/*')` 留在单文件产物里，宿主 Node 启动时报 `MODULE_NOT_FOUND`。构建成功不代表产物能在 Node 下运行；`tests/service-bundle.test.ts` 就是这条陷阱的回归测试。
 - 两个产物都要提交。改了源码却没有重建产物，视为未完成。
 - 构建脚本不创建输出目录。新增输出目录时，先提交其中的第一个产物，或在构建前手动建目录。
-- `bun run build` 只产出上面两个 JS 文件。`panel/index.html` 与 `panel/styles.css` 是静态包文件：`index.html` 链接样式表。它们不是构建产物。没有任何字体资产：样式表没有 `@font-face` 规则。
+- `bun run build` 只产出上面两个 JS 文件。`panel/index.html` 与 `panel/styles.css` 是静态包文件：`index.html` 链接样式表。它们不是构建产物。包内没有字体资产，样式表也没有 `@font-face` 规则；面板在运行时为自带的界面字族声明 `@font-face`，并从已批准的 jsDelivr 源载入字体文件。
 
 面板入口是 `src/panel/main.ts`（`connectHost()` 与挂载）。面板实现是 `src/panel/app.ts`（`mountPanel`）。运行时语言包由 `app.ts` 导入，并在构建期内联进 `panel/main.js`。
 
 ## 字号（fontScale）
 
-面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。扩展不携带任何字体、`@font-face` 规则或字体许可文件；`fontScale` 只控制大小，不决定用哪款字体。
+面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。guest 帧看不到宿主文档的 `FontFace` 集合，所以 `src/panel/fonts.ts` 为 OpenChamber 自带的字族（Inter、Noto Sans、Fira Code 等）声明同名 `@font-face` 规则，并从 jsDelivr 载入 Latin WOFF2；`contributes.origins` 声明该 CDN，安装对话框会请求用户批准。扩展不携带字体文件或字体许可；自定义或系统字族直接使用本地回退。`fontScale` 只控制大小，不决定用哪款字体。
 
 `config.jsonc` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；字号按 12px 设计稿编写，因此 100 是旧尺寸的 14/12。根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
 
@@ -124,9 +124,10 @@ git diff --exit-code -- panel/main.js service/main.js
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
 | `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、不用 `localStorage`/`sessionStorage`/IndexedDB/cookie 且只用宿主实例存储保存首开标记（绝不存配置、路径、密钥、顺序或折叠状态）、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
+| `tests/panel-fonts.test.ts` | 面板自行声明宿主自带的界面字族：sans 与 mono 字体栈按宿主权重生成 `@font-face`，Fixel Text 使用宿主 CDN 文件，Atkinson Hyperlegible 载入 400 与 700，系统或自定义字体栈不声明任何字体面，重复宿主快照不会重复添加字族。测试进程不发出网络请求。 |
 | `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）；配置读取失败（`/config` 失败或结构异常时卡头显示 `Unable to check`/`无法检查` 而不是 `Invalid`/`Checking`，`config.loadFailed` 显示原因且不回显上游原文，下一轮读取成功后恢复真实有效性，usage/quotas 失败不会把有效配置变成 `Unable to check`，失败期间不写存储、不触发创建）。 |
 | `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
-| `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
+| `tests/manifest.test.ts` | 清单路径、必需构建产物、包元数据与声明的字体来源。 |
 | `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |
 
 ## 验证
