@@ -62,7 +62,8 @@ export type ConfigField =
   | 'refreshSeconds'
   | 'fontScale'
   | 'cardOrder'
-  | 'language';
+  | 'language'
+  | 'providerIcons';
 
 /** One safe, displayable problem. Never carries the key or the file text. */
 export type ConfigFieldIssue = {
@@ -120,6 +121,12 @@ export type ServiceConfig = {
   language: string;
   /** True when `language` was present but not a non-empty string. */
   languageInvalid: boolean;
+  /**
+   * Per-provider icon overrides. Lenient by design: a missing or malformed
+   * value yields `{}`, bad entries are dropped, and unknown icon names are
+   * ignored by the panel. Nothing here can mark the config invalid.
+   */
+  providerIcons: Record<string, string>;
   source: ConfigSource;
   /** Whether a config file was found at the configured path. */
   present: boolean;
@@ -147,6 +154,8 @@ export type ConfigReport = {
   language: string;
   /** True when `language` was present but not a non-empty string. */
   languageInvalid: boolean;
+  /** Provider-to-icon-name overrides. Never carries anything derived from the key. */
+  providerIcons: Record<string, string>;
   /** Present after the service rebuilt a damaged file; `null` otherwise. */
   recovery: ConfigRecovery | null;
   source: ConfigSource;
@@ -168,6 +177,7 @@ export const fallbackConfig = (): ServiceConfig => ({
   cardOrderInvalid: false,
   language: DEFAULT_LANGUAGE,
   languageInvalid: false,
+  providerIcons: {},
   source: 'default',
   present: false,
   validity: 'missing',
@@ -273,6 +283,53 @@ export const parseLanguageValue = (raw: unknown): FieldParse<string> => {
   return { ok: true, value: raw };
 };
 
+/**
+ * Ceilings for `providerIcons`: a mapping, not a data store. The key is the
+ * last segment of a provider name, the value is a bundled icon name. Unknown
+ * icon names are ignored by the panel, so this field can never mark the
+ * config invalid.
+ */
+export const MAX_PROVIDER_ICONS = 200;
+export const MAX_PROVIDER_ICON_LENGTH = 80;
+
+/** The template's own default: only the `~keys` bucket is overridden. */
+export const DEFAULT_PROVIDER_ICONS: Readonly<Record<string, string>> = Object.freeze({ '~keys': 'magpie' });
+
+/**
+ * Reads `providerIcons` leniently. Only a root-level object is considered;
+ * anything else yields `{}`. Own enumerable string keys only, non-empty keys
+ * and values of at most `MAX_PROVIDER_ICON_LENGTH` characters, at most
+ * `MAX_PROVIDER_ICONS` entries. Bad entries are dropped; no default is ever
+ * implied, so an old file without this field keeps no `~keys` mapping.
+ *
+ * Every name is kept as an own data property through `defineProperty`, so
+ * `__proto__`, `constructor`, and `prototype` stay ordinary mappings instead
+ * of reaching through the prototype chain. The result is a plain `{}`, so it
+ * serialises and compares like any other mapping.
+ */
+export const parseProviderIcons = (value: unknown): Record<string, string> => {
+  const icons: Record<string, string> = {};
+  if (!isRecord(value)) return icons;
+
+  let count = 0;
+  for (const key of Object.keys(value)) {
+    if (count >= MAX_PROVIDER_ICONS) break;
+    if (key === '' || key.length > MAX_PROVIDER_ICON_LENGTH) continue;
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const raw = value[key];
+    if (typeof raw !== 'string' || raw === '' || raw.length > MAX_PROVIDER_ICON_LENGTH) continue;
+    Object.defineProperty(icons, key, {
+      value: raw,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    count += 1;
+  }
+
+  return icons;
+};
+
 export type CardOrderParse = {
   order: string[];
   invalid: boolean;
@@ -321,9 +378,10 @@ export type ConfigObjectParse =
   | { ok: false; field: ConfigField; message: string };
 
 /**
- * Reads the six known keys from a root object. Fatal endpoint, key, and
+ * Reads the seven known keys from a root object. Fatal endpoint, key, and
  * interval errors fall back to the whole default config; `fontScale`,
- * `language`, and `cardOrder` are lenient and never degrade the endpoint.
+ * `language`, `cardOrder`, and `providerIcons` are lenient and never degrade
+ * the endpoint.
  */
 export const parseConfigObject = (value: Record<string, unknown>): ConfigObjectParse => {
   let baseUrl = DEFAULT_BASE_URL;
@@ -383,6 +441,10 @@ export const parseConfigObject = (value: Record<string, unknown>): ConfigObjectP
     issues.push({ field: 'cardOrder', kind: 'invalid', message: cardOrder.message ?? 'cardOrder is invalid.' });
   }
 
+  // Cosmetic and panel-filtered: bad entries are dropped, unknown icon names
+  // are ignored by the panel, and this never changes `validity`.
+  const providerIcons = parseProviderIcons(value.providerIcons);
+
   return {
     ok: true,
     issues,
@@ -398,6 +460,7 @@ export const parseConfigObject = (value: Record<string, unknown>): ConfigObjectP
       cardOrderInvalid: cardOrder.invalid,
       language,
       languageInvalid,
+      providerIcons,
       source: 'file',
       present: true,
       validity: issues.length === 0 ? 'valid' : 'invalid',

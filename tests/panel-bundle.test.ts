@@ -1,7 +1,7 @@
 // Guards for the packaged panel: the host loads a classic script in a sandboxed
 // iframe, and the panel must never reach the network or storage on its own.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
@@ -55,12 +55,77 @@ describe('panel bundle', () => {
 
   test('carries its provider marks inline, as data URLs', () => {
     // A package-relative image path does not survive the web relay's opaque
-    // origin, so every mark is part of the bundle itself.
+    // origin, so every mark is part of the bundle itself: SVG documents as
+    // percent-encoded SVG data URLs, raster marks as PNG data URLs.
     expect(bundle.includes('data:image/svg+xml')).toBe(true);
-    const logos = readFileSync(join(root, 'src/panel/logos.ts'), 'utf8');
-    expect(logos.includes('data:image')).toBe(false);
-    // Ten marks: nine vendored from magpie plus the generic glyph.
-    expect((logos.match(/\n {4}svg: "/g) ?? []).length).toBe(10);
+    expect(bundle.includes('data:image/png')).toBe(true);
+  });
+
+  test('the committed panel bundle stays within its size cap', () => {
+    expect(statSync(join(root, 'panel/main.js')).size).toBeLessThanOrEqual(900 * 1024);
+  });
+
+  test('references no remote asset', () => {
+    expect(/src\s*=\s*["']https?:/i.test(bundle)).toBe(false);
+    expect(/url\(\s*["']?https?:/i.test(bundle)).toBe(false);
+    expect(/url\(\s*["']?https?:/i.test(source)).toBe(false);
+  });
+
+  test('the generated icon set matches the shared icon contract', async () => {
+    // Imported dynamically so the other bundle guards still run even while the
+    // generator's files are not on disk yet.
+    const panel = await import('../src/panel/logos.generated.ts');
+    const shared = await import('../src/shared/provider-icons.generated.ts');
+    const generated = panel.GENERATED_LOGOS as Record<
+      string,
+      { color: boolean; svg?: string; dataUrl?: string }
+    >;
+    const names = new Set<string>(shared.ICON_NAMES as readonly string[]);
+
+    expect(typeof shared.SOURCE_SHA).toBe('string');
+    expect((shared.SOURCE_SHA as string).length).toBeGreaterThan(0);
+
+    // Every configured override name is either a packaged name or the generic
+    // glyph the generated mapping itself uses.
+    for (const [provider, name] of Object.entries(shared.PROVIDER_ICONS as Record<string, string>)) {
+      expect({
+        provider,
+        name,
+        packaged: names.has(name) || name === 'generic',
+      }).toEqual({ provider, name, packaged: true });
+    }
+    for (const name of Object.keys(generated)) {
+      expect({ name, packaged: names.has(name) }).toEqual({ name, packaged: true });
+    }
+    // And the packaged names are exactly the generated set plus `generic`,
+    // which logos.ts hand-writes so the fallback always exists.
+    for (const name of names) {
+      if (name === 'generic') continue;
+      expect({ name, generated: Object.hasOwn(generated, name) }).toEqual({ name, generated: true });
+    }
+
+    const entries = Object.entries(generated);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [name, entry] of entries) {
+      expect(typeof entry.color).toBe('boolean');
+      // Exactly one carrier: an SVG document or a raster data URL.
+      const carriers = [entry.svg !== undefined && entry.svg !== '', entry.dataUrl !== undefined && entry.dataUrl !== ''];
+      expect([name, carriers.filter(Boolean).length]).toEqual([name, 1]);
+      // A mark labelled `-color` carries its brand colours; never a mask.
+      if (name.endsWith('-color')) expect({ name, color: entry.color }).toEqual({ name, color: true });
+    }
+
+    // Raster marks arrive as inline PNG data URLs; both carrier kinds exist.
+    expect(entries.some(([, entry]) => entry.dataUrl?.startsWith('data:image/png;base64,') === true)).toBe(true);
+    expect(entries.some(([, entry]) => entry.color)).toBe(true);
+    expect(entries.some(([, entry]) => !entry.color)).toBe(true);
+
+    // The names the panel is known to rely on resolve through the generated
+    // mapping, without hard-coding the whole table here.
+    for (const id of ['claude', 'codex', 'copilot', 'antigravity', 'workbuddy', 'openrouter']) {
+      const name = (shared.PROVIDER_ICONS as Record<string, string>)[id];
+      expect({ id, mapped: name !== undefined && names.has(name) }).toEqual({ id, mapped: true });
+    }
   });
 
   test('renders one pool grid per pool row', () => {

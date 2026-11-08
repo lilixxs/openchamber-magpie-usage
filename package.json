@@ -28,6 +28,7 @@
     "build": "bun run build:panel && bun run build:service",
     "build:panel": "openchamber-guest-bundle src/panel/main.ts panel/main.js",
     "build:service": "openchamber-guest-bundle --node src/service/main.ts service/main.js",
+    "icons:sync": "bun tools/icons/sync.ts --force",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run build && bun test"

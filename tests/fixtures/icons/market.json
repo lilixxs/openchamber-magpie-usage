@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "package": "@fixture/one",
+      "name": "One",
+      "icon": "opencode",
+      "providers": ["opencode-zen-free", "opencode-zen"]
+    },
+    {
+      "package": "@fixture/two",
+      "name": "Two",
+      "icon": "workbuddy-color",
+      "providers": ["workbuddy", "workbuddy-ai"]
+    },
+    {
+      "package": "@fixture/middleware",
+      "name": "Middleware",
+      "kind": "middleware"
+    },
+    {
+      "package": "@fixture/no-icon",
+      "name": "No icon",
+      "providers": ["ignored-provider"]
+    }
+  ]
+}

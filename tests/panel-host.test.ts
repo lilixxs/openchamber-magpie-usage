@@ -62,6 +62,15 @@ afterEach(() => {
 /** Lets every pending microtask settle; the fake host answers without I/O. */
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Several ticks in a row, so a whole request cycle settles before asserting. */
+const drain = async (): Promise<void> => {
+  for (let index = 0; index < 10; index += 1) await tick();
+};
+
+/** The resolved icon name of every card's mark handle, in list order. */
+const marks = (): string[] =>
+  [...root.querySelectorAll<HTMLElement>('.quo-logo')].map((node) => node.dataset.logo ?? '');
+
 const start = (host: FakeHost, context: Partial<HostReadyContext> = {}): PanelHandle => {
   const mounted = mountPanel({ host: host.client, root });
   handle = mounted;
@@ -261,6 +270,7 @@ const configReport = (overrides: Partial<ConfigReport> = {}): ConfigReport => ({
   cardOrderInvalid: false,
   language: 'auto',
   languageInvalid: false,
+  providerIcons: {},
   recovery: null,
   source: 'file',
   present: true,
@@ -404,7 +414,7 @@ describe('panel first paint', () => {
   test('asks the host for config, usage and quotas, then renders them', async () => {
     const host = makeHost();
     start(host);
-    await tick();
+    await drain();
 
     expect(host.requests.map((request) => [request.method, request.path])).toEqual([
       ['GET', '/config'],
@@ -421,6 +431,156 @@ describe('panel first paint', () => {
       'OpenRouter',
       'OpenCode Go',
     ]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Provider icons                                                             */
+/* -------------------------------------------------------------------------- */
+
+describe('provider icons', () => {
+  const cardNames = (): string[] =>
+    [...root.querySelectorAll('.quo-card .quo-name')].map((node) => node.textContent);
+
+  test('a delayed /config with overrides re-skins the open cards in place', async () => {
+    const host = makeHost();
+    start(host);
+    await drain();
+
+    const nativeOpenRouter = marks()[1];
+    expect(nativeOpenRouter).not.toBe('');
+    const openBefore = [...root.querySelectorAll<HTMLElement>('.quo-card')].map((node) => node.dataset.open);
+    expect(openBefore.slice(0, 2)).toEqual(['true', 'true']);
+
+    // The next cycle's /config answer is delayed while the cards stay on screen.
+    let releaseConfig!: () => void;
+    const configGate = new Promise<void>((resolve) => {
+      releaseConfig = resolve;
+    });
+    host.state.reply = (request) => {
+      if (request.path === '/config') {
+        return configGate.then(() => json(configReport({ providerIcons: { openrouter: 'kimi' } })));
+      }
+      return respondOk(request);
+    };
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    // A few settlement rounds: the request is issued, nothing has applied yet.
+    await tick();
+    await tick();
+
+    // The cards keep their current render; the override is not applied early.
+    expect(marks()[1]).toBe(nativeOpenRouter);
+    expect(cardNames()).toEqual(['DeepSeek', 'OpenRouter', 'OpenCode Go']);
+
+    releaseConfig();
+    await drain();
+
+    // The existing card's mark resolved through the override, in place.
+    expect(marks()[1]).toBe('kimi');
+    expect(cardNames()).toEqual(['DeepSeek', 'OpenRouter', 'OpenCode Go']);
+    // Order and open state survived the swap.
+    expect([...root.querySelectorAll<HTMLElement>('.quo-card')].map((node) => node.dataset.open)).toEqual(
+      openBefore,
+    );
+  });
+
+  test('a removed or invalid override falls back to the normal chain', async () => {
+    const host = makeHost();
+    start(host);
+    await drain();
+    const nativeOpenRouter = marks()[1];
+    expect(nativeOpenRouter).not.toBe('');
+
+    host.state.reply = withConfig(configReport({ providerIcons: { openrouter: 'kimi' } }));
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await drain();
+    expect(marks()[1]).toBe('kimi');
+
+    host.state.reply = withConfig(configReport({ providerIcons: {} }));
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await drain();
+    expect(marks()[1]).toBe(nativeOpenRouter);
+
+    host.state.reply = withConfig(configReport({ providerIcons: { openrouter: '__missing-icon__' } }));
+    (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
+    await drain();
+    expect(marks()[1]).toBe(nativeOpenRouter);
+  });
+
+  test('a card the bundle has no mark for keeps the generic glyph', async () => {
+    const host = makeHost((request) => {
+      if (request.path === '/v1/magpie/quotas') {
+        return json(
+          quotaReport({
+            cards: [
+              quotaCards()[0]!,
+              {
+                provider: 'r-magpie/our-free-model',
+                name: 'Mystery',
+                kind: 'plan',
+                plan: null,
+                user: null,
+                balance: null,
+                error: null,
+                readAt: null,
+                from: null,
+                windows: [],
+              },
+            ],
+          }),
+        );
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await drain();
+    expect(marks()[1]).toBe('generic');
+
+    // The mark itself still rendered something, not a broken image.
+    expect(root.querySelectorAll('.quo-logo')[1]?.firstElementChild).not.toBeNull();
+  });
+
+  test('prototype-named providers resolve from own override properties safely', async () => {
+    const overrides = JSON.parse(
+      '{"__proto__":"kimi","constructor":"commandcode"}',
+    ) as Record<string, string>;
+    const prototypeCard = (provider: string, name: string): QuotaCard => ({
+      provider,
+      name,
+      kind: 'plan',
+      plan: null,
+      user: null,
+      balance: null,
+      error: null,
+      readAt: null,
+      from: null,
+      windows: [],
+    });
+    const host = makeHost((request) => {
+      if (request.path === '/config') return json(configReport({ providerIcons: overrides }));
+      if (request.path === '/v1/magpie/quotas') {
+        return json(
+          quotaReport({
+            cards: [
+              prototypeCard('r-magpie/__proto__', 'Proto'),
+              prototypeCard('r-magpie/constructor', 'Ctor'),
+              prototypeCard('r-magpie/plain-unmapped', 'Plain'),
+            ],
+          }),
+        );
+      }
+      return respondOk(request);
+    });
+    start(host);
+    await drain();
+
+    const marksOnScreen = marks();
+    expect(marksOnScreen[0]).toBe('kimi');
+    expect(marksOnScreen[1]).toBe('commandcode');
+    expect(marksOnScreen[2]).toBe('generic');
+    // The panel did not mutate anything through the prototype chain.
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect('kimi' in ({} as Record<string, unknown>)).toBe(false);
   });
 });
 

@@ -165,6 +165,7 @@ describe('conservative recovery', () => {
       "refreshSeconds": 90,
       "fontScale": 150,
       "language": "zh-CN",
+      "providerIcons": {"openai-mm": "claude"},
       "cardOrder": ["old"]
     `;
     const recovered = recoverConfigValues(text);
@@ -174,8 +175,16 @@ describe('conservative recovery', () => {
       refreshSeconds: 90,
       fontScale: 150,
       language: 'zh-CN',
+      providerIcons: { 'openai-mm': 'claude' },
     });
-    expect(recovered.restored).toEqual(['baseUrl', 'apiKey', 'refreshSeconds', 'fontScale', 'language']);
+    expect(recovered.restored).toEqual([
+      'baseUrl',
+      'apiKey',
+      'refreshSeconds',
+      'fontScale',
+      'language',
+      'providerIcons',
+    ]);
     expect(recovered.defaulted).toEqual([]);
   });
 
@@ -241,7 +250,64 @@ describe('conservative recovery', () => {
     const recovered = recoverConfigValues('[{"baseUrl":"https://a.example"}]');
     expect(recovered.values.baseUrl).toBe(DEFAULT_BASE_URL);
     expect(recovered.values.apiKey).toBeNull();
-    expect(recovered.defaulted).toEqual(['baseUrl', 'apiKey', 'refreshSeconds', 'fontScale', 'language']);
+    expect(recovered.defaulted).toEqual([
+      'baseUrl',
+      'apiKey',
+      'refreshSeconds',
+      'fontScale',
+      'language',
+      'providerIcons',
+    ]);
+  });
+
+  test('a unique, independently provable providerIcons object is restored with its valid entries', () => {
+    const recovered = recoverConfigValues(
+      '{"baseUrl":"https://a.example","providerIcons":{"~keys":"magpie","extra":"claude"}}',
+    );
+    expect(recovered.values.providerIcons).toEqual({ '~keys': 'magpie', extra: 'claude' });
+    expect(recovered.restored).toContain('providerIcons');
+    expect(recovered.defaulted).not.toContain('providerIcons');
+  });
+
+  test('a restored providerIcons object keeps prototype keys as safe own properties', () => {
+    // The slice carries comments: it must re-parse strictly on its own, and
+    // the keys named after the object model must survive the AST path as
+    // own properties instead of vanishing through the property setter.
+    const recovered = recoverConfigValues(
+      `{
+        "providerIcons": {
+          // provider literally named __proto__
+          "__proto__": "claude",
+          "constructor": "magpie" /* own, too */,
+          "plain": "generic"
+        }
+      }`,
+    );
+    for (const key of ['__proto__', 'constructor', 'plain']) {
+      expect({ key, own: Object.hasOwn(recovered.values.providerIcons, key) }).toEqual({ key, own: true });
+    }
+    expect((recovered.values.providerIcons as Record<string, unknown>)['__proto__']).toBe('claude');
+    expect(Object.getPrototypeOf(recovered.values.providerIcons)).toBe(Object.prototype);
+    expect(recovered.restored).toContain('providerIcons');
+  });
+
+  test('a duplicated or unprovable providerIcons falls back to the template default', () => {
+    const duplicated = recoverConfigValues(
+      '{"providerIcons":{"a":"claude"},"providerIcons":{"b":"codex"}}',
+    );
+    expect(duplicated.values.providerIcons).toEqual({ '~keys': 'magpie' });
+    expect(duplicated.defaulted).toContain('providerIcons');
+    expect(duplicated.restored).not.toContain('providerIcons');
+
+    const unprovable = recoverConfigValues('{"providerIcons":{"a":"cla');
+    expect(unprovable.values.providerIcons).toEqual({ '~keys': 'magpie' });
+    expect(unprovable.defaulted).toContain('providerIcons');
+  });
+
+  test('an old file without providerIcons recovers the template mapping, not an empty one', () => {
+    const recovered = recoverConfigValues('{"baseUrl":"https://a.example","apiKey":"k"');
+    expect(recovered.values.providerIcons).toEqual({ '~keys': 'magpie' });
+    expect(recovered.defaulted).toContain('providerIcons');
   });
 
   test('only auto, en, and zh-CN are valid recovered languages; ranges still apply', () => {
@@ -307,14 +373,35 @@ describe('local cardOrder edit', () => {
     if (parsed.state === 'ok') expect(parsed.value.cardOrder).toEqual(['new']);
   });
 
-  test('the template is itself valid JSONC with the six active keys', () => {
+  test('a providerIcons mapping survives a cardOrder edit untouched', () => {
+    const text = `{
+  "baseUrl": "https://magpie.example.com",
+  "providerIcons": { "~keys": "magpie" },
+  "cardOrder": ["a|b|"]
+}
+`;
+    const next = setCardOrderText(text, ['b|c|']);
+    expect(next).not.toBeNull();
+    expect(next?.includes('"providerIcons": { "~keys": "magpie" },')).toBe(true);
+    const parsed = inspectConfigDocument(next ?? '');
+    expect(parsed.state).toBe('ok');
+    if (parsed.state === 'ok') {
+      expect(parsed.value.cardOrder).toEqual(['b|c|']);
+      expect(parsed.value.providerIcons).toEqual({ '~keys': 'magpie' });
+    }
+  });
+
+  test('the template is itself valid JSONC with the seven active keys', () => {
     const text = renderConfigTemplate(['a|b|']);
     const inspection = inspectConfigDocument(text);
     expect(inspection.state).toBe('ok');
     if (inspection.state !== 'ok') return;
     expect(Object.keys(inspection.value).sort()).toEqual(
-      ['apiKey', 'baseUrl', 'cardOrder', 'fontScale', 'language', 'refreshSeconds'].sort(),
+      ['apiKey', 'baseUrl', 'cardOrder', 'fontScale', 'language', 'providerIcons', 'refreshSeconds'].sort(),
     );
     expect(inspection.value.cardOrder).toEqual(['a|b|']);
+    // The template's own default: every provider collapses into the keys icon.
+    expect(inspection.value.providerIcons).toEqual({ '~keys': 'magpie' });
+    expect(text).toContain('// providerIcons：');
   });
 });

@@ -7,6 +7,7 @@
  */
 import type { QuotaCard, QuotaWindow } from './magpie.ts';
 import { formatAmount, quotaUsedPercent } from './format.ts';
+import { ICON_NAMES, PROVIDER_ICONS } from './provider-icons.generated.ts';
 
 /* -------------------------------------------------------------------------- */
 /* Pools and tiers                                                            */
@@ -176,44 +177,58 @@ export const balanceParts = (balance: string | null): BalancePart[] => {
 /* Logos                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type LogoId =
-  | 'workbuddy'
-  | 'antigravity'
-  | 'deepseek'
-  | 'kimi'
-  | 'commandcode'
-  | 'opencode'
-  | 'openrouter'
-  | 'openai'
-  | 'magpie'
-  | 'generic';
+export type LogoId = string;
 
-/** Provider id suffix (after the last `/`) to logo, for the providers magpie knows. */
-const LOGO_BY_SUFFIX: Record<string, LogoId> = {
-  workbuddy: 'workbuddy',
-  antigravity: 'antigravity',
-  deepseek: 'deepseek',
-  kimi: 'kimi',
-  'kimi-code': 'kimi',
-  'kimi-code-cn': 'kimi',
-  commandcode: 'commandcode',
-  opencode: 'opencode',
-  'opencode-go': 'opencode',
-  openrouter: 'openrouter',
-  openai: 'openai',
-  'openai-mm': 'openai',
-  '~keys': 'magpie',
-  magpie: 'magpie',
+/** The bundled fallback mark: this repo's own glyph, never a provider's. */
+export const GENERIC_LOGO: LogoId = 'generic';
+
+/** Names that actually shipped in the bundle, plus this repo's own fallback. */
+const PACKAGED_ICONS: ReadonlySet<string> = new Set([...ICON_NAMES, GENERIC_LOGO]);
+
+const owns = (record: Readonly<Record<string, unknown>>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(record, key);
+
+/** An icon name the bundle really carries; config values are not trusted. */
+const bundled = (name: unknown): name is string =>
+  typeof name === 'string' && PACKAGED_ICONS.has(name);
+
+/** The part after the provider's last `/`: the id magpie names the card after. */
+const providerKey = (provider: string): string => {
+  const cut = provider.lastIndexOf('/');
+  return cut === -1 ? provider : provider.slice(cut + 1);
 };
 
 /**
- * The logo for a card. Remote cards all carry `provider: "r-magpie/<id>"` and
- * no `icon` field, so the identity is the id suffix; anything unrecognised
- * gets the generic glyph rather than a broken image.
+ * The icon for a card, in four steps:
+ *
+ * 1. `providerIcons` from `config.jsonc`, keyed by the provider id;
+ * 2. the mapping generated from magpie's own provider icons;
+ * 3. a bundled file named after the id (`id`, `id-color`, `id.png`);
+ * 4. the generic glyph.
+ *
+ * A step only wins with a bundled icon name, so a typo in the config falls
+ * through silently instead of rendering a broken mark. `constructor` and
+ * `__proto__` are plain strings here: every lookup is an own-property check,
+ * so a provider name can never reach object internals.
  */
-export const logoFor = (provider: string | null): LogoId => {
-  if (!provider) return 'generic';
-  const cut = provider.lastIndexOf('/');
-  const suffix = cut === -1 ? provider : provider.slice(cut + 1);
-  return LOGO_BY_SUFFIX[suffix] ?? 'generic';
+export const logoFor = (
+  provider: string | null,
+  overrides?: Readonly<Record<string, string>> | null,
+): LogoId => {
+  if (!provider) return GENERIC_LOGO;
+  const key = providerKey(provider);
+  if (key === '') return GENERIC_LOGO;
+
+  if (overrides) {
+    const configured = owns(overrides, key) ? overrides[key] : undefined;
+    if (bundled(configured)) return configured;
+  }
+
+  const mapped = owns(PROVIDER_ICONS, key) ? PROVIDER_ICONS[key] : undefined;
+  if (bundled(mapped)) return mapped;
+
+  for (const candidate of [key, `${key}-color`, `${key}.png`]) {
+    if (PACKAGED_ICONS.has(candidate)) return candidate;
+  }
+  return GENERIC_LOGO;
 };

@@ -8,12 +8,15 @@ import {
   MAX_FONT_SCALE,
   MIN_FONT_SCALE,
   MAX_CARD_ORDER_KEY,
+  MAX_PROVIDER_ICON_LENGTH,
+  MAX_PROVIDER_ICONS,
   applyCardOrder,
   cardOrderKey,
   cardOrderKeys,
   isLoopbackHostname,
   normaliseBaseUrl,
   parseCardOrder,
+  parseProviderIcons,
   type QuotaCard,
 } from '../src/shared/magpie.ts';
 import { parseConfigText } from '../src/shared/config-document.ts';
@@ -231,6 +234,146 @@ describe('cardOrder in the config file', () => {
     const { config } = parseConfigText(JSON.stringify({ refreshSeconds: 15, cardOrder: 'nope' }));
     expect(config.refreshSeconds).toBe(15);
     expect(config.cardOrder).toEqual([]);
+  });
+});
+
+describe('providerIcons in the config file', () => {
+  test('a missing providerIcons stays empty; no template default is implied', () => {
+    expect(parseConfigText('{}').config.providerIcons).toEqual({});
+    const oldFile = JSON.stringify({
+      baseUrl: 'https://magpie.example.com',
+      apiKey: 'key-legacy',
+      refreshSeconds: 60,
+      fontScale: 100,
+      language: 'auto',
+    });
+    expect(parseConfigText(oldFile).config.providerIcons).toEqual({});
+  });
+
+  test('a valid mapping is kept and never marks the file invalid', () => {
+    const { config } = parseConfigText(
+      JSON.stringify({
+        baseUrl: 'https://magpie.example.com',
+        apiKey: 'key-123',
+        providerIcons: { openai: 'claude', '~keys': 'magpie' },
+      }),
+    );
+    expect(config.providerIcons).toEqual({ openai: 'claude', '~keys': 'magpie' });
+    expect(config.issue).toBeNull();
+    expect(config.issues).toEqual([]);
+    expect(config.validity).toBe('valid');
+    expect(config.baseUrl).toBe('https://magpie.example.com');
+    expect(config.apiKey).toBe('key-123');
+  });
+
+  test('a non-object falls back to {} without an issue and keeps the endpoint', () => {
+    for (const providerIcons of ['nope', 42, [], null, true]) {
+      const { config } = parseConfigText(
+        JSON.stringify({ baseUrl: 'https://magpie.example.com', apiKey: 'key-123', providerIcons }),
+      );
+      expect({ providerIcons, issue: config.issue, icons: config.providerIcons }).toEqual({
+        providerIcons,
+        issue: null,
+        icons: {},
+      });
+      expect(config.baseUrl).toBe('https://magpie.example.com');
+      expect(config.apiKey).toBe('key-123');
+    }
+  });
+
+  test('bad entries are dropped entry by entry; good ones stay', () => {
+    const icons = parseProviderIcons({
+      good: 'claude',
+      emptyValue: '',
+      notString: 7,
+      nullValue: null,
+      '': 'claude',
+      other: 'codex',
+    });
+    expect(icons).toEqual({ good: 'claude', other: 'codex' });
+  });
+
+  test('a key and a value may be at most 80 characters, inclusive', () => {
+    const atLimit = 'p'.repeat(MAX_PROVIDER_ICON_LENGTH);
+    const over = `${atLimit}!`;
+    const icons = parseProviderIcons({
+      [atLimit]: 'claude',
+      [over]: 'claude',
+      valueAtLimit: atLimit,
+      valueOver: over,
+    });
+    expect(icons).toEqual({ [atLimit]: 'claude', valueAtLimit: atLimit });
+  });
+
+  test('at most 200 entries are read, in file order', () => {
+    const entries: Record<string, string> = {};
+    for (let index = 0; index < MAX_PROVIDER_ICONS + 5; index += 1) {
+      entries[`provider-${String(index).padStart(3, '0')}`] = 'claude';
+    }
+    const icons = parseProviderIcons(entries);
+    expect(Object.keys(icons).length).toBe(MAX_PROVIDER_ICONS);
+    expect(icons['provider-000']).toBe('claude');
+    expect(icons['provider-199']).toBe('claude');
+    expect(icons['provider-200']).toBeUndefined();
+  });
+
+  test('__proto__, constructor, and prototype stay safe own properties, never dropped', () => {
+    const raw = JSON.parse(
+      '{"__proto__":"claude","constructor":"magpie","prototype":"codex","plain":"generic"}',
+    ) as Record<string, unknown>;
+    const icons = parseProviderIcons(raw);
+
+    for (const key of ['__proto__', 'constructor', 'prototype', 'plain']) {
+      expect({ key, own: Object.hasOwn(icons, key) }).toEqual({ key, own: true });
+    }
+    expect((icons as Record<string, unknown>)['__proto__']).toBe('claude');
+    expect(Object.getPrototypeOf(icons)).toBe(Object.prototype);
+
+    // The mapping survives a serialisation round trip without pollution.
+    const stored = JSON.parse(JSON.stringify(icons)) as Record<string, string>;
+    expect(Object.keys(stored).sort()).toEqual(['__proto__', 'constructor', 'plain', 'prototype'].sort());
+    expect(stored['__proto__']).toBe('claude');
+  });
+
+  test('a real JSONC file with comments keeps prototype keys as own properties', () => {
+    // Regression: jsonc-parser's plain parse used to lose own `__proto__`,
+    // `constructor`, and `prototype` (they went through the property setter);
+    // the file surfaces them again as plain string entries.
+    const text = [
+      '{',
+      '  // icon overrides; keys may collide with the object model',
+      '  "providerIcons": {',
+      '    // the provider literally named `__proto__`',
+      '    "__proto__": "claude",',
+      '    "constructor": "magpie", /* and through a block comment */',
+      '    "prototype": "codex",',
+      '    "plain": "generic"',
+      '  },',
+      '  "baseUrl": "https://magpie.example.com"',
+      '}',
+    ].join('\n');
+    const { config } = parseConfigText(text);
+    for (const key of ['__proto__', 'constructor', 'prototype', 'plain']) {
+      expect({ key, own: Object.hasOwn(config.providerIcons, key) }).toEqual({ key, own: true });
+    }
+    expect(config.providerIcons['__proto__']).toBe('claude');
+    expect(config.providerIcons['constructor']).toBe('magpie');
+    expect(config.providerIcons['prototype']).toBe('codex');
+    // The panel's view of the same mapping round-trips through JSON unchanged.
+    const stored = JSON.parse(JSON.stringify(config.providerIcons)) as Record<string, string>;
+    expect(stored['__proto__']).toBe('claude');
+    expect(stored['constructor']).toBe('magpie');
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect(config.issue).toBeNull();
+    expect(config.baseUrl).toBe('https://magpie.example.com');
+  });
+
+  test('unknown icon names are kept for the panel to filter; the service does not judge', () => {
+    const { config } = parseConfigText(
+      JSON.stringify({ providerIcons: { 'our-card': 'not-a-real-icon' } }),
+    );
+    expect(config.providerIcons).toEqual({ 'our-card': 'not-a-real-icon' });
+    expect(config.issue).toBeNull();
   });
 });
 

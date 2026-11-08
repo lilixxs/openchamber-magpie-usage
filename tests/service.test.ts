@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { inspectConfigDocument } from '../src/shared/config-document.ts';
+import { inspectConfigDocument, parseConfigText } from '../src/shared/config-document.ts';
 import {
   call,
   makeTempDir,
@@ -80,7 +80,7 @@ describe('local service', () => {
 });
 
 describe('POST /config/create', () => {
-  test('creates the six-item template with bilingual comments', async () => {
+  test('creates the seven-item template with bilingual comments', async () => {
     const dir = tempDir();
     const configPath = join(dir.path, 'nested', 'config.jsonc');
     const service = await startService({ configPath });
@@ -98,6 +98,8 @@ describe('POST /config/create', () => {
     expect(text).toContain('"fontScale": 100');
     expect(text).toContain('"cardOrder": []');
     expect(text).toContain('"language": "auto"');
+    expect(text).toContain('// providerIcons：');
+    expect(text).toContain('"providerIcons": {"~keys":"magpie"}');
     expect(text).toContain('replace-with-your-gateway-key');
     // The example key is a comment and is not an active value.
     const active = text
@@ -105,6 +107,9 @@ describe('POST /config/create', () => {
       .filter((line) => !line.trimStart().startsWith('//'))
       .join('\n');
     expect(active).not.toContain('replace-with-your-gateway-key');
+    expect(active).toContain('"providerIcons": {"~keys":"magpie"}');
+    // The exact mapping behind the template line, independent of spacing.
+    expect(readDocument(configPath).providerIcons).toEqual({ '~keys': 'magpie' });
 
     if (process.platform !== 'win32') expect(statSync(configPath).mode & 0o777).toBe(0o600);
   });
@@ -268,6 +273,7 @@ describe('POST /config/order', () => {
     expect(written.refreshSeconds).toBe(60);
     expect(written.fontScale).toBe(100);
     expect(written.language).toBe('auto');
+    expect(written.providerIcons).toEqual({ '~keys': 'magpie' });
 
     const report = JSON.parse((await call(service.url, '/config')).body);
     expect(report.present).toBe(true);
@@ -378,6 +384,90 @@ describe('POST /config/order', () => {
     expect(readDocument(configPath)).toEqual({ baseUrl: 'http://127.0.0.1:3425' });
   });
 
+  test('an order save keeps providerIcons bytes and still never echoes the key', async () => {
+    const dir = tempDir();
+    const key = 'sk-order-icons-must-not-appear-5b3a';
+    const configPath = writeConfigText(
+      dir,
+      `{
+  "baseUrl": "https://magpie.example.com",
+  "apiKey": "${key}",
+  "providerIcons": { "~keys": "magpie" }
+}
+`,
+    );
+    const service = await startService({ configPath });
+
+    const answer = await post(service.url, '/config/order', { order });
+    expect(answer.status).toBe(200);
+    expect(JSON.parse(answer.body).recovery).toBeNull();
+
+    const text = readFileSync(configPath, 'utf8');
+    expect(text).toContain('"providerIcons": { "~keys": "magpie" }');
+    expect(text).toContain(`"apiKey": "${key}"`);
+    expect(parseDocumentText(text).cardOrder).toEqual(order);
+    expect(answer.body.includes(key)).toBe(false);
+
+    const report = JSON.parse((await call(service.url, '/config')).body);
+    expect(report.providerIcons).toEqual({ '~keys': 'magpie' });
+  });
+
+  test('a rebuild recovers a commented providerIcons object with its own prototype keys', async () => {
+    const dir = tempDir();
+    const configPath = writeConfigText(
+      dir,
+      [
+        '{',
+        '  // damaged below: the order save must rebuild in place',
+        '  "baseUrl": "https://magpie.example.com",',
+        '  "providerIcons": {',
+        '    // provider literally named __proto__',
+        '    "__proto__": "claude",',
+        '    "constructor": "magpie" /* own, too */,',
+        '    "plain": "generic"',
+        '  },',
+        '  "cardOrder": ["old",',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const service = await startService({ configPath });
+
+    const answer = await post(service.url, '/config/order', { order });
+    expect(answer.status).toBe(200);
+    expect(JSON.parse(answer.body).recovery).not.toBeNull();
+
+    // The rebuilt file carries the recovered mapping as active settings,
+    // including the keys named after the object model (JSON.stringify shape).
+    const rebuilt = readFileSync(configPath, 'utf8');
+    const active = rebuilt
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('//'))
+      .join('\n');
+    expect(active).toContain('"providerIcons": {"__proto__":"claude","constructor":"magpie","plain":"generic"}');
+
+    // Reading the rebuilt file back keeps them as own properties. The file is
+    // read the way the service reads it — `parseConfigText` — because the
+    // generic inspector is not the effective-config contract and may not keep
+    // the model-modelled keys.
+    const reread = parseConfigText(readFileSync(configPath, 'utf8')).config.providerIcons;
+    for (const name of ['__proto__', 'constructor', 'plain']) {
+      expect({ name, own: Object.hasOwn(reread, name) }).toEqual({ name, own: true });
+    }
+    expect(reread['__proto__']).toBe('claude');
+    expect(JSON.parse(JSON.stringify(reread))['__proto__']).toBe('claude');
+
+    // And /config reports the same mapping, again as own plain strings.
+    const body = JSON.parse((await call(service.url, '/config')).body) as {
+      providerIcons: Record<string, string>;
+      validity: string;
+    };
+    expect(body.validity).toBe('valid');
+    expect(Object.hasOwn(body.providerIcons, '__proto__')).toBe(true);
+    expect(body.providerIcons['__proto__']).toBe('claude');
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+  });
+
   test('an external edit before publish is rejected with 409 and not overwritten', async () => {
     const dir = tempDir();
     const configPath = writeConfig(dir, { baseUrl: 'http://127.0.0.1:3425' });
@@ -457,6 +547,7 @@ describe('/config', () => {
       cardOrderInvalid: false,
       language: 'auto',
       languageInvalid: false,
+      providerIcons: {},
       recovery: null,
       source: 'default',
       present: false,
@@ -520,6 +611,72 @@ describe('/config', () => {
     expect(body.cardOrderInvalid).toBe(true);
     expect(body.cardOrder).toEqual(['ok']);
     expect(body.issues.map((issue: { field: string }) => issue.field).sort()).toEqual(['cardOrder', 'fontScale']);
+  });
+
+  test('reports providerIcons as a plain string mapping and never the key', async () => {
+    const dir = tempDir();
+    const key = 'sk-icons-must-not-appear-4e6b';
+    const configPath = writeConfig(dir, {
+      baseUrl: 'https://magpie.example.com',
+      apiKey: key,
+      // An unknown name is deliberately kept: the service does not filter icon
+      // names, only the panel's chain decides which ones render.
+      providerIcons: { '~keys': 'magpie', unusual: 'claude', otherworldly: 'not-a-real-icon' },
+    });
+    const service = await startService({ configPath });
+
+    const answer = await call(service.url, '/config');
+    const body = JSON.parse(answer.body);
+    expect(body.providerIcons).toEqual({
+      '~keys': 'magpie',
+      unusual: 'claude',
+      otherworldly: 'not-a-real-icon',
+    });
+    for (const value of Object.values(body.providerIcons) as string[]) {
+      expect(typeof value).toBe('string');
+    }
+    // The key, its length, and any prefix stay out of the answer too.
+    expect(answer.body.includes(key)).toBe(false);
+    expect(answer.body.includes(String(key.length))).toBe(false);
+  });
+
+  test('prototype key names survive the config file to /config as own properties', async () => {
+    const dir = tempDir();
+    const configPath = writeConfigText(
+      dir,
+      '{"baseUrl":"https://magpie.example.com","providerIcons":{"__proto__":"claude","constructor":"magpie","prototype":"codex","plain":"generic"}}',
+    );
+    const service = await startService({ configPath });
+
+    const answer = await call(service.url, '/config');
+    const body = JSON.parse(answer.body) as { providerIcons: Record<string, string> };
+    for (const name of ['__proto__', 'constructor', 'prototype', 'plain']) {
+      expect({ name, own: Object.hasOwn(body.providerIcons, name) }).toEqual({ name, own: true });
+    }
+    expect(body.providerIcons['__proto__']).toBe('claude');
+    expect(body.providerIcons['constructor']).toBe('magpie');
+    // The service's own JSON serialisation round trip keeps them as strings.
+    const stored = JSON.parse(JSON.stringify(body.providerIcons)) as Record<string, string>;
+    expect(stored['__proto__']).toBe('claude');
+    expect(Object.getPrototypeOf(body.providerIcons)).toBe(Object.prototype);
+  });
+
+  test('bad providerIcons entries are dropped in the report without a file issue', async () => {
+    const dir = tempDir();
+    const configPath = writeConfig(dir, {
+      baseUrl: 'https://magpie.example.com',
+      apiKey: 'key-123',
+      providerIcons: { good: 'claude', empty: '', wrong: 7 },
+    });
+    const service = await startService({ configPath });
+
+    const body = JSON.parse((await call(service.url, '/config')).body);
+    expect(body.providerIcons).toEqual({ good: 'claude' });
+    expect(body.validity).toBe('valid');
+    expect(body.issue).toBeNull();
+    expect(body.issues).toEqual([]);
+    expect(body.baseUrl).toBe('https://magpie.example.com');
+    expect(body.apiKeyConfigured).toBe(true);
   });
 
   test('reports duplicate top-level keys as a document error', async () => {

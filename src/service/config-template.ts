@@ -7,7 +7,7 @@ import type {
   ConfigRecoveryResult,
   ConfigRecoveryValues,
 } from '../shared/config-document.ts';
-import type { ConfigRecovery } from '../shared/magpie.ts';
+import { DEFAULT_PROVIDER_ICONS, type ConfigRecovery } from '../shared/magpie.ts';
 
 export type TemplateValues = {
   baseUrl: string;
@@ -15,6 +15,7 @@ export type TemplateValues = {
   refreshSeconds: number;
   fontScale: number;
   language: string;
+  providerIcons: Record<string, string>;
 };
 
 export const TEMPLATE_DEFAULTS: TemplateValues = {
@@ -23,6 +24,7 @@ export const TEMPLATE_DEFAULTS: TemplateValues = {
   refreshSeconds: 60,
   fontScale: 100,
   language: 'auto',
+  providerIcons: { ...DEFAULT_PROVIDER_ICONS },
 };
 
 const orderBlock = (order: string[]): string =>
@@ -32,8 +34,8 @@ const orderBlock = (order: string[]): string =>
     .join('\n');
 
 /**
- * Six active settings plus fixed bilingual comments. Examples are comments, so
- * a fictional key or order can never become an active value.
+ * Seven active settings plus fixed bilingual comments. Examples are comments,
+ * so a fictional key or order can never become an active value.
  */
 export const renderConfigTemplate = (
   order: string[] = [],
@@ -66,7 +68,14 @@ export const renderConfigTemplate = (
     '',
     '  // language: "auto", "en", or "zh-CN".',
     '  // language："auto"、"en" 或 "zh-CN"。',
-    `  "language": ${JSON.stringify(values.language)}`,
+    `  "language": ${JSON.stringify(values.language)},`,
+    '',
+    '  // providerIcons: map a provider (the last segment of its name) to a bundled icon name.',
+    '  // Unknown names are silently ignored; the normal generated, file-name, or generic fallback still applies.',
+    '  // providerIcons：把供应商（取名称末段）映射到面板内置的图标名；未知名称会被静默忽略，仍按既有的生成图标、文件名、通用图标顺序回退。',
+    '  // At most 200 entries; each key and each value is at most 80 characters.',
+    '  // 最多 200 项；每个键与值各不超过 80 个字符。',
+    `  "providerIcons": ${JSON.stringify(values.providerIcons)}`,
     '}',
     '',
   ].join('\n');

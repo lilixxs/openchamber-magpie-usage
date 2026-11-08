@@ -50,7 +50,7 @@ import {
   type BalancePart,
 } from '../shared/quotas-view.ts';
 import { createHostFontFaces } from './fonts.ts';
-import { LOGOS, type LogoEntry } from './logos.ts';
+import { logoEntry, logoDataUri } from './logos.ts';
 
 /** Monochrome gear, painted with `currentColor`; not a drag handle. */
 const GEAR_SVG =
@@ -676,6 +676,9 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     }
     state.configLoadError = null;
     state.config = value as unknown as ConfigReport;
+    // `providerIcons` may have changed while the cards were already on screen;
+    // swap the marks in place instead of rebuilding the list.
+    refreshLogos();
     // A failed save keeps the on-screen order; do not let a later config read
     // snap the cards back to the old file order before the next retry.
     if (state.orderError === null) {
@@ -1272,12 +1275,20 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   /* Quota cards                                                                */
   /* -------------------------------------------------------------------------- */
 
+  /**
+   * The mark's icon name. `providerIcons` arrives with `/config`, so a card can
+   * resolve differently once the file has been read or edited; the name is
+   * kept on the drag handle so the mark can be swapped in place.
+   */
+  const logoIdFor = (provider: string | null): string =>
+    logoFor(provider, state.config?.providerIcons);
+
   /** Logo in the header: a colour mark as an image, a single-colour one as a mask. */
-  const logoNode = (card: QuotaCard): HTMLElement => {
-    const entry: LogoEntry = LOGOS[logoFor(card.provider)];
+  const logoNode = (provider: string | null): HTMLElement => {
+    const entry = logoEntry(logoIdFor(provider));
     // An isolated SVG document: two cards' gradient and clip ids cannot collide.
-    const uri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(entry.svg)}`;
-    if (entry.color) {
+    const uri = logoDataUri(entry);
+    if (entry.color && uri !== null) {
       const image = el('img', 'quo-mark');
       image.src = uri;
       image.alt = '';
@@ -1286,10 +1297,29 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     }
     const mask = el('span', 'quo-mask');
     // Paint the SVG as a mask, so the mark takes the theme's colour.
-    const paint = `url("${uri}") center / contain no-repeat`;
-    mask.style.setProperty('mask', paint);
-    mask.style.setProperty('-webkit-mask', paint);
+    if (uri !== null) {
+      const paint = `url("${uri}") center / contain no-repeat`;
+      mask.style.setProperty('mask', paint);
+      mask.style.setProperty('-webkit-mask', paint);
+    }
     return mask;
+  };
+
+  /**
+   * Updates the marks already on screen after a `/config` read, without
+   * rebuilding the list: card order, open state, drag handlers and focus stay
+   * as they are. A card being dragged waits for the drop repaint.
+   */
+  const refreshLogos = (): void => {
+    if (state.dragging) return;
+    for (const handle of quotaList.querySelectorAll<HTMLElement>('.quo-logo')) {
+      const provider = handle.dataset.provider ?? '';
+      const id = logoIdFor(provider === '' ? null : provider);
+      if (handle.dataset.logo === id && handle.firstElementChild !== null) continue;
+      handle.dataset.logo = id;
+      clear(handle);
+      handle.append(logoNode(provider === '' ? null : provider));
+    }
   };
 
   /** What a collapsed card shows on its right: plan, then the tightest figure. */
@@ -1409,7 +1439,9 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     const handle = el('button', 'quo-logo');
     handle.type = 'button';
     handle.setAttribute('aria-label', t('quota.dragLabel', { name: cardName }));
-    handle.append(logoNode(card));
+    handle.dataset.provider = card.provider ?? '';
+    handle.dataset.logo = logoIdFor(card.provider);
+    handle.append(logoNode(card.provider));
 
     if (!collapsible) {
       head.append(handle, el('span', 'quo-name', cardName));

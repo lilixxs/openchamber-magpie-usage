@@ -108,6 +108,8 @@ Quota cards follow Magpie's own quota page. Each card has a header row:
 - Click the header or the chevron to expand or collapse. The first two cards are expanded by default; expansion state is remembered for the session.
 - **Error cards stay fully visible and cannot be collapsed.**
 
+The mark resolves in four steps: a `providerIcons` entry in `config.jsonc`, the mapping generated from magpie's own icons, a bundled file named after the provider id (`id`, `id-color`, `id.png`; PNG marks are also registered without the extension), then `generic`. A step only wins with an icon name the bundle actually carries, so a wrong name falls through silently. Custom channels (for example your own OpenAI-compatible endpoint) are not matched automatically; add a `providerIcons` entry when you want a specific mark.
+
 Windows are grouped by the upstream `pool` field. One pool is one row with a two-column grid. A pool with fewer than two windows is left-aligned; a third window wraps. When the card is narrower than 260px, a container query switches to one column.
 
 Each window cell shows:
@@ -247,7 +249,10 @@ The file is JSONC: `//` line comments and `/* */` block comments are allowed, tr
   "refreshSeconds": 60,
   "fontScale": 100,
   "cardOrder": [],
-  "language": "auto"
+  "language": "auto",
+  // A file the extension creates carries only "~keys"; "openai-mm": "openai"
+  // below is a custom-override example, not a default value.
+  "providerIcons": { "~keys": "magpie", "openai-mm": "openai" }
 }
 ```
 
@@ -261,6 +266,7 @@ A file created by the extension has fixed bilingual comments above each field; t
 | `fontScale` | No | Integer 50–200. Default 100, which renders the 14px base; the root font-size is `14px × fontScale / 100` and every panel type size is in rem. A non-integer or out-of-range value falls back to 100 and sets `fontScaleInvalid`; the endpoint and the key still apply. |
 | `cardOrder` | No | String array, at most 500 entries, each 1–200 characters. Parsed leniently: a non-array value, a non-string entry, an over-long entry, or too many entries drops only the bad part; the rest of the config still applies. Order is presentation only and never degrades the endpoint. |
 | `language` | No | `auto` (default), `en`, or `zh-CN`. Case-sensitive; must equal a non-test `code` in `panel/locales/index.json` (entries marked `test`, such as `ar`, are not runtime languages). A non-string or empty value falls back to `auto` with a notice; the endpoint and key still apply. |
+| `providerIcons` | No | Lenient object: the key is the part of the provider name after its last `/`, the value is a bundled icon name. At most 200 entries; keys and values at most 80 characters each; any own string key is kept as a plain mapping. A non-object value is dropped wholesale, bad entries are dropped silently, and unknown icon names are ignored silently; it never sets a new `invalid` and never changes the Configuration card header. A file the extension creates defaults to `{ "~keys": "magpie" }`; an existing file is never rewritten to add it, so add the field yourself when you need it — a file without it resolves to an empty mapping. A rebuild keeps a `providerIcons` mapping it can prove from the old text and only falls back to `{ "~keys": "magpie" }` when that mapping cannot be recovered. |
 
 Behaviour:
 
@@ -270,6 +276,7 @@ Behaviour:
 - `apiKey` may be absent or `null`; both mean "not configured". Any other non-string value is invalid, and an empty string is not a valid key.
 - `cardOrder` keys are `encodeURIComponent(provider)|encodeURIComponent(kind)|encodeURIComponent(user)`. A second or third card with the same triple gets `#2` or `#3`. Keys the gateway no longer reports are ignored; new cards are appended in gateway order.
 - `fontScale` is the panel's manual equivalent of OpenChamber's interface font-size setting; the host does not pass that percentage to guest frames. `GET /config` reports `fontScale` and `fontScaleInvalid`, and `POST /config/order` preserves `fontScale`.
+- `providerIcons` is only an icon override mapping: bad values never set a new `invalid` and never change the Configuration card header; `GET /config` reports the mapping, and no field can carry anything derived from the key. The four-step mark resolution is described under [Quota cards](#quota-cards).
 - Writes replace only the root `cardOrder`, edited locally with `jsonc-parser`. Other fields, unknown top-level keys, comments outside that array, indentation, and CRLF/LF endings are preserved byte for byte; comments inside the `cardOrder` array may be dropped, which the generated template states. Saving is serialised inside the service process through one promise chain, so two panels cannot interleave read-modify-write. The file keeps its original mode (0600 when it cannot be read), is written to `<path>.<pid>.<rand>.tmp`, and is published with `rename`.
 - Before publishing, the service re-reads the file: if it changed on disk the write fails with 409 `config-conflict` and nothing is overwritten. A file that appears while a new one is being created is never replaced — creation is exclusive (a hard link, falling back to an exclusive `wx` open). A race with a writer in another process cannot be excluded absolutely; see [CONTRIBUTING.md](CONTRIBUTING.md#verification).
 - A structurally damaged file (syntax error, duplicate top-level key, non-object root) is rebuilt in place only when an order is saved: the full template plus the submitted order, then the previous text appended line by line as `//` comments under a bilingual marker. No `.bak` or other backup file is created, and backups left by older versions are not deleted. Field-value errors do **not** rebuild — only `cardOrder` is edited, and the bad field stays in the file for the user to fix. The service keeps `{ at, restored, defaulted, previousText: 'appended-comments' }` in memory for its lifetime; a restart clears the notice while the file comments persist. The report never contains the old text, the key, the key length, or a key prefix.
@@ -292,7 +299,7 @@ The service binds only to `127.0.0.1:<port assigned by the host>`. Every request
 | Route | Purpose |
 | --- | --- |
 | `GET /health` | The original contract `{ ok, name, apiVersion }`, unchanged. |
-| `GET /config` | The whole file state: `configPath`, `baseUrl`, `host`, `loopback`, `apiKeyConfigured`, `refreshSeconds`, `fontScale`, `fontScaleInvalid`, `cardOrder`, `cardOrderInvalid`, `language`, `languageInvalid`, `recovery` (`{ at, restored, defaulted, previousText: 'appended-comments' }` after a rebuild, otherwise `null`), `source` (`file` or `default`), `present`, `validity` (`missing` / `valid` / `invalid` / `unreadable`), `issue` (document-level or fatal, otherwise `null`), and `issues` (array of `{ field, kind, message }`). No field can carry the key. |
+| `GET /config` | The whole file state: `configPath`, `baseUrl`, `host`, `loopback`, `apiKeyConfigured`, `refreshSeconds`, `fontScale`, `fontScaleInvalid`, `cardOrder`, `cardOrderInvalid`, `language`, `languageInvalid`, `providerIcons`, `recovery` (`{ at, restored, defaulted, previousText: 'appended-comments' }` after a rebuild, otherwise `null`), `source` (`file` or `default`), `present`, `validity` (`missing` / `valid` / `invalid` / `unreadable`), `issue` (document-level or fatal, otherwise `null`), and `issues` (array of `{ field, kind, message }`). No field can carry the key. |
 | `POST /config/create` | Body `{}` or `{ "order"?: string[] }`; 200 `{ ok: true, created, present: true }`. Idempotent: an existing file is left untouched and `created` is `false`. `order` is 0–500 strings of 1–200 characters; anything else is 400 `bad-request`. |
 | `POST /config/order` | Body `{ "order": string[] }`; 200 `{ ok: true, order, recovery }`. 1–500 strings of 1–200 characters; anything else is 400 `bad-request`. Field-value errors do not rebuild the file; structural damage does. |
 | `GET /v1/magpie/usage?period=today\|7d\|30d` | Normalised usage summary. |
@@ -302,7 +309,7 @@ The service binds only to `127.0.0.1:<port assigned by the host>`. Every request
 Config-write details:
 
 - All writes in one process are serialised through one promise chain, so two panels cannot interleave read-modify-write. A failed write does not block the queue.
-- The merge replaces only the root `cardOrder`, edited locally with `jsonc-parser`; `fontScale`, `language`, `refreshSeconds`, unknown keys, and every comment outside that array stay byte for byte.
+- The merge replaces only the root `cardOrder`, edited locally with `jsonc-parser`; `fontScale`, `language`, `refreshSeconds`, `providerIcons`, unknown keys, and every comment outside that array stay byte for byte.
 - Read → edit → write `<path>.<pid>.<rand>.tmp` → `chmod` the temporary file to the original mode (0600 when unreadable) → re-read the original and abort with 409 `config-conflict` if it changed → `rename` over the original.
 - Creation is exclusive: a hard link, falling back to an exclusive `wx` open, never overwrites a file that appeared meanwhile. A file created by `POST /config/create` or by an order save gets mode 0600 where the platform supports it.
 - A structurally damaged file is rebuilt in place: the full template plus the submitted order, then the old text appended line by line as `//` comments under a bilingual marker. No `.bak` file is written and existing backups are not deleted. The service keeps `{ at, restored, defaulted, previousText: 'appended-comments' }` in memory for `/config`; a restart clears it while the file comments persist.
@@ -350,4 +357,4 @@ This README documents what the extension does and how to install and configure i
 
 MIT. See [LICENSE](LICENSE).
 
-Provider marks (WorkBuddy, Antigravity, DeepSeek, Kimi, Command Code, opencode, OpenRouter, OpenAI, magpie) come from [yetone/magpie](https://github.com/yetone/magpie) under `internal/gui/assets/icons/`, also MIT; most originate from lobe-icons. The marks remain the property of their owners and are used only to label the provider of a quota card. The `generic` fallback is drawn by this project.
+Provider marks are synced from [yetone/magpie](https://github.com/yetone/magpie) (`main`, MIT) into the generated sources `src/shared/provider-icons.generated.ts` and `src/panel/logos.generated.ts` by `tools/icons/sync.ts`; those files record the source repository, branch, and commit — currently `4436b7d98f7abd0ca1b54d76ef1c7afc87367531` — plus the attribution line. Many of the marks originate from lobe-icons. The marks remain the property of their owners and are used only to label the provider of a quota card. PNG marks and `-color` marks keep their brand colours; the others follow the host theme. The `generic` fallback is drawn by this project.

@@ -21,6 +21,7 @@ import {
   DEFAULT_BASE_URL,
   DEFAULT_FONT_SCALE,
   DEFAULT_LANGUAGE,
+  DEFAULT_PROVIDER_ICONS,
   DEFAULT_REFRESH_SECONDS,
   fallbackConfig,
   normaliseBaseUrl,
@@ -28,6 +29,7 @@ import {
   parseConfigObject,
   parseFontScaleValue,
   parseLanguageValue,
+  parseProviderIcons,
   parseRefreshSecondsValue,
   type ConfigField,
   type ConfigFieldIssue,
@@ -114,6 +116,65 @@ const invalidConfig = (issue: ConfigFieldIssue, message: string): { config: Serv
 });
 
 /**
+ * jsonc-parser materialises objects with `{}` and plain assignment, so a
+ * `"__proto__"` property is swallowed by the prototype setter. The icon map is
+ * the one field where that would silently lose data, so it is rebuilt from the
+ * AST with own data properties instead. Comments are skipped, a later duplicate
+ * key wins, and no value ever reaches a prototype.
+ */
+const materialiseIconMap = (node: Node): Record<string, unknown> => {
+  const bag: Record<string, unknown> = {};
+  if (node.type !== 'object' || !node.children) return bag;
+  for (const child of node.children) {
+    if (child.type !== 'property') continue;
+    const keyNode = child.children?.[0];
+    const valueNode = child.children?.[1];
+    if (!keyNode || typeof keyNode.value !== 'string' || !valueNode) continue;
+    // Park non-string values as `null`: a later duplicate still replaces an
+    // earlier string, and `parseProviderIcons` then drops the entry.
+    Object.defineProperty(bag, keyNode.value, {
+      value: valueNode.type === 'string' ? valueNode.value : null,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return bag;
+};
+
+/** The icon mapping from an already-valid root tree, or `null` when absent. */
+const providerIconsFromTree = (tree: Node | undefined): Record<string, string> | null => {
+  if (!tree || tree.type !== 'object' || !tree.children) return null;
+  let valueNode: Node | undefined;
+  for (const child of tree.children) {
+    if (child.type !== 'property') continue;
+    const key = child.children?.[0]?.value;
+    if (key === 'providerIcons') valueNode = child.children?.[1];
+  }
+  if (!valueNode) return null;
+  if (valueNode.type !== 'object') return {};
+  return parseProviderIcons(materialiseIconMap(valueNode));
+};
+
+/**
+ * The recovery variant: the property's own source slice must parse with zero
+ * errors first, and only then is the object materialised. A truncated or
+ * ambiguous slice is never trusted.
+ */
+const provedProviderIcons = (property: Node, body: string): Record<string, string> | null => {
+  const valueNode = property.children?.[1];
+  if (!valueNode || valueNode.length <= 0) return null;
+  const slice = body.slice(valueNode.offset, valueNode.offset + valueNode.length);
+  if (slice.trim() === '') return null;
+  const errors: ParseError[] = [];
+  parse(slice, errors, JSONC_PARSE_OPTIONS);
+  if (errors.length > 0) return null;
+  const node = parseTree(slice, [], JSONC_PARSE_OPTIONS);
+  if (!node || node.type !== 'object') return null;
+  return parseProviderIcons(materialiseIconMap(node));
+};
+
+/**
  * Parses the config file text. A document-level problem falls back to the
  * loopback default plus a safe issue; field-level lenient problems keep the
  * endpoint and key and are listed in `issues`.
@@ -144,6 +205,13 @@ export const parseConfigText = (text: string): { config: ServiceConfig } => {
       parsed.message,
     );
   }
+
+  // `inspection.value` already lost any `__proto__` icon key to the parser's
+  // setter; rebuild the one field from the tree so own keys survive.
+  const { body } = splitLeadingBom(text);
+  const icons = providerIconsFromTree(parseTree(body, [], JSONC_PARSE_OPTIONS));
+  if (icons !== null) parsed.config.providerIcons = icons;
+
   return { config: parsed.config };
 };
 
@@ -153,6 +221,7 @@ export type ConfigRecoveryValues = {
   refreshSeconds: number;
   fontScale: number;
   language: string;
+  providerIcons: Record<string, string>;
 };
 
 export type ConfigRecoveryResult = {
@@ -167,6 +236,7 @@ const RECOVERABLE_FIELDS: ConfigField[] = [
   'refreshSeconds',
   'fontScale',
   'language',
+  'providerIcons',
 ];
 
 const allDefaulted = (): ConfigRecoveryResult => ({
@@ -176,6 +246,7 @@ const allDefaulted = (): ConfigRecoveryResult => ({
     refreshSeconds: DEFAULT_REFRESH_SECONDS,
     fontScale: DEFAULT_FONT_SCALE,
     language: DEFAULT_LANGUAGE,
+    providerIcons: { ...DEFAULT_PROVIDER_ICONS },
   },
   restored: [],
   defaulted: [...RECOVERABLE_FIELDS],
@@ -187,6 +258,8 @@ const allDefaulted = (): ConfigRecoveryResult => ({
  * a guessed quote, bracket, comma, or comment is rejected. A duplicated field
  * uses neither occurrence. `baseUrl` and `apiKey` are restored as a pair: a key
  * without a proven endpoint is never attached to the default endpoint.
+ * `providerIcons` is restored only from a proven object, keeping its valid
+ * entries; otherwise it falls back to the template default.
  */
 export const recoverConfigValues = (text: string): ConfigRecoveryResult => {
   const { body } = splitLeadingBom(text);
@@ -307,6 +380,21 @@ export const recoverConfigValues = (text: string): ConfigRecoveryResult => {
       result.values.language = value;
     },
   );
+
+  // A provable object keeps its valid entries and drops the rest; a duplicate,
+  // an unreadable slice, or a non-object falls back to the template default.
+  if (!has('providerIcons')) {
+    defaulted.add('providerIcons');
+  } else {
+    const property = uniqueProperty('providerIcons');
+    const proved = property ? provedProviderIcons(property, body) : null;
+    if (proved !== null) {
+      result.values.providerIcons = proved;
+      restored.add('providerIcons');
+    } else {
+      defaulted.add('providerIcons');
+    }
+  }
 
   result.restored = RECOVERABLE_FIELDS.filter((field) => restored.has(field));
   result.defaulted = RECOVERABLE_FIELDS.filter((field) => defaulted.has(field));

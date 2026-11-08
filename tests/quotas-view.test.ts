@@ -3,7 +3,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import { decodeQuotas, type QuotaCard, type QuotaWindow } from '../src/shared/magpie.ts';
+import { ICON_NAMES, PROVIDER_ICONS } from '../src/shared/provider-icons.generated.ts';
 import {
+  GENERIC_LOGO,
   balanceParts,
   groupWindows,
   isTierWindow,
@@ -14,6 +16,9 @@ import {
   windowTail,
 } from '../src/shared/quotas-view.ts';
 import { antigravityCard, commandCodeCards, quotaPayload } from './fixtures.ts';
+
+/** Icon names the generator must ship, checked without hard-coding the table. */
+const STABLE_IDS = ['claude', 'codex', 'copilot', 'antigravity', 'workbuddy', 'openrouter'] as const;
 
 const cardOf = (value: unknown): QuotaCard => {
   const decoded = decodeQuotas({ data: [value] });
@@ -192,26 +197,70 @@ describe('tightest remaining', () => {
 });
 
 describe('logo mapping', () => {
-  test('maps the providers magpie ships and the two shared ids', () => {
-    expect(logoFor('r-magpie/workbuddy')).toBe('workbuddy');
-    expect(logoFor('r-magpie/antigravity')).toBe('antigravity');
-    expect(logoFor('r-magpie/deepseek')).toBe('deepseek');
-    expect(logoFor('r-magpie/kimi')).toBe('kimi');
-    expect(logoFor('r-magpie/kimi-code')).toBe('kimi');
-    expect(logoFor('r-magpie/kimi-code-cn')).toBe('kimi');
-    expect(logoFor('r-magpie/commandcode')).toBe('commandcode');
-    expect(logoFor('r-magpie/opencode-go')).toBe('opencode');
-    expect(logoFor('r-magpie/openrouter')).toBe('openrouter');
-    expect(logoFor('r-magpie/openai-mm')).toBe('openai');
-    expect(logoFor('r-magpie/openai')).toBe('openai');
-    expect(logoFor('r-magpie/~keys')).toBe('magpie');
+  test('the stable acknowledged provider ids have a generated mapping', () => {
+    for (const id of STABLE_IDS) {
+      expect({ id, mapped: Object.hasOwn(PROVIDER_ICONS, id) }).toEqual({ id, mapped: true });
+      expect((ICON_NAMES as readonly string[]).includes(PROVIDER_ICONS[id] ?? '')).toBe(true);
+    }
   });
 
-  test('anything unrecognised gets the generic glyph', () => {
-    expect(logoFor('r-magpie/our-free-model')).toBe('generic');
-    expect(logoFor('kimi')).toBe('kimi');
-    expect(logoFor(null)).toBe('generic');
-    expect(logoFor('')).toBe('generic');
+  test('a provider with a shipped mark resolves through the chain to a packaged name', () => {
+    for (const id of STABLE_IDS) {
+      const logo = logoFor(`r-magpie/${id}`);
+      expect(logo).not.toBe(GENERIC_LOGO);
+      expect((ICON_NAMES as readonly string[]).includes(logo)).toBe(true);
+    }
+  });
+
+  test('a config override wins over the generated mapping and the file names', () => {
+    // `kimi` is a bundled mark, so the override can take over.
+    expect(logoFor('r-magpie/openrouter', { openrouter: 'kimi' })).toBe('kimi');
+    expect(logoFor('r-magpie/unknown-provider', { 'unknown-provider': 'kimi' })).toBe('kimi');
+    // The template's way of collapsing every provider into the keys icon.
+    expect(logoFor('r-magpie/~keys', { '~keys': 'magpie' })).toBe('magpie');
+    expect(logoFor(null, { something: 'kimi' })).toBe(GENERIC_LOGO);
+    expect(logoFor('', { something: 'kimi' })).toBe(GENERIC_LOGO);
+  });
+
+  test('a non-bundled override value falls through the chain instead of taking over', () => {
+    // `__missing-icon__` ships under no name, so it cannot take over.
+    expect(logoFor('r-magpie/openrouter', { openrouter: '__missing-icon__' })).toBe(
+      logoFor('r-magpie/openrouter'),
+    );
+    // A provider with its own mark keeps that mark as an override of its own,
+    // and a value the bundle does not carry falls back to the chain.
+    expect(logoFor('r-magpie/claude', { claude: '__missing-icon__' })).not.toBe(GENERIC_LOGO);
+    expect((ICON_NAMES as readonly string[]).includes(logoFor('r-magpie/claude'))).toBe(true);
+    for (const overrides of [
+      { openrouter: '__missing-icon__' },
+      { openrouter: '' },
+      { openrouter: 7 } as unknown as Record<string, string>,
+    ]) {
+      expect(logoFor('r-magpie/openrouter', overrides)).toBe(logoFor('r-magpie/openrouter'));
+    }
+  });
+
+  test('override lookups are own-property checks; prototype keys stay as plain names', () => {
+    const overrides = JSON.parse('{"__proto__":"kimi","constructor":"commandcode"}') as Record<string, string>;
+    // A provider literally named `__proto__` resolves like any other name.
+    expect(logoFor('r-magpie/__proto__', overrides)).toBe('kimi');
+    expect(logoFor('r-magpie/constructor', overrides)).toBe('commandcode');
+    // Everyone else keeps their own resolution; nothing was polluted.
+    expect(logoFor('r-magpie/workbuddy', overrides)).toBe(logoFor('r-magpie/workbuddy'));
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect('kimi' in ({} as Record<string, unknown>)).toBe(false);
+    expect(logoFor('r-magpie/x', overrides)).toBe(GENERIC_LOGO);
+  });
+
+  test('the old hand-written aliases are gone and stay generic without overrides', () => {
+    expect(logoFor('r-magpie/openai-mm')).toBe(GENERIC_LOGO);
+    expect(logoFor('r-magpie/~keys')).toBe(GENERIC_LOGO);
+  });
+
+  test('anything without a mark still gets the generic glyph', () => {
+    expect(logoFor('r-magpie/our-free-model')).toBe(GENERIC_LOGO);
+    expect(logoFor(null)).toBe(GENERIC_LOGO);
+    expect(logoFor('')).toBe(GENERIC_LOGO);
   });
 });
 

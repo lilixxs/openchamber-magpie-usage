@@ -218,6 +218,7 @@ export const createService = (options: ServiceOptions): LocalService => {
         cardOrderInvalid: config.cardOrderInvalid,
         language: config.language,
         languageInvalid: config.languageInvalid,
+        providerIcons: config.providerIcons,
         recovery: recoveryNotice,
         source: config.source,
         present: config.present,

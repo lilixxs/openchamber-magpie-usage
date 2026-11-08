@@ -108,6 +108,8 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 - 点击头部或箭头展开/收起。默认展开前 2 张；展开状态在当前会话内记忆。
 - **错误卡始终完整可见，不能折叠。**
 
+厂商标识按四步解析：`config.jsonc` 的 `providerIcons` 覆盖 → 从 magpie 图标生成的映射 → 与 id 同名的打包文件（`id`、`id-color`、`id.png`；PNG 标识不带扩展名也可命中）→ `generic`。只有已打包的图标名能生效，写错的名称会静默落到下一步。本机自定义渠道（例如自建的 OpenAI 兼容端点）不保证自动命中，需要特定标识时在 `providerIcons` 里自行配置。
+
 窗口按上游 `pool` 分组。一个 pool 一行，行内两列网格。不足两个窗口的 pool 靠左，第三个窗口自动换行。卡片宽度小于 260px 时，容器查询切换为单列。
 
 每个窗口格显示：
@@ -247,7 +249,10 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
   "refreshSeconds": 60,
   "fontScale": 100,
   "cardOrder": [],
-  "language": "auto"
+  "language": "auto",
+  // 扩展新建的文件只有 "~keys"；下面的 "openai-mm": "openai"
+  // 是自定义覆盖示例，不是默认值。
+  "providerIcons": { "~keys": "magpie", "openai-mm": "openai" }
 }
 ```
 
@@ -261,6 +266,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
 | `fontScale` | 否 | 整数 50–200，默认 100，对应 14px 基准；根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。非整数或越界时回退 100 并置 `fontScaleInvalid`；端点与密钥照常生效。 |
 | `cardOrder` | 否 | 字符串数组，最多 500 项，每项 1–200 字符。宽松解析：值不是数组、含非字符串项、项超长或超量时只丢坏的部分，其余配置照常生效。顺序只影响外观，绝不会让端点降级。 |
 | `language` | 否 | `auto`（默认）、`en` 或 `zh-CN`。大小写敏感，必须等于 `panel/locales/index.json` 中非 `test` 的 `code`（标了 `test` 的条目如 `ar` 不是运行时语言）。非字符串或空串回退 `auto` 并提示；端点与密钥照常生效。 |
+| `providerIcons` | 否 | 宽松对象：键是 provider 名最后一个 `/` 之后的部分，值是已打包的图标名。最多 200 项，键与值各不超过 80 字符，任意 own 字符串键都按普通映射保留。值不是对象时整体丢弃，坏项静默丢弃，未知图标名静默忽略；不产生新的 `invalid`，不改变配置卡卡头。扩展新建的文件默认带 `{ "~keys": "magpie" }`；已有文件不会被自动加上该字段，需要时自行添加——缺该字段的文件生效值为空映射。重建时，旧 `providerIcons` 映射能从原文证明完整就原样保留，只有无法恢复时才回退 `{ "~keys": "magpie" }`。 |
 
 行为：
 
@@ -270,6 +276,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
 - `apiKey` 可以缺失或为 `null`，两者都表示「未配置」。其他非字符串值不合法，空字符串也不是合法密钥。
 - `cardOrder` 的键为 `encodeURIComponent(provider)|encodeURIComponent(kind)|encodeURIComponent(user)`。同一三元组的第二、第三张卡追加 `#2`、`#3`。网关已不存在的键会被忽略；新增卡片按网关顺序排在末尾。
 - `fontScale` 是面板对 OpenChamber 界面字号设置的手动等价物；宿主不会把该百分比传给 guest 帧。`GET /config` 回传 `fontScale` 与 `fontScaleInvalid`，`POST /config/order` 保留 `fontScale`。
+- `providerIcons` 只是图标覆盖映射：坏值不产生新的 `invalid`，不改变配置卡卡头；`GET /config` 回传该映射，任何字段都不携带由密钥推导的内容。厂商标识的四步解析见[额度卡](#额度卡)。
 - 写入只替换根级 `cardOrder`，用 `jsonc-parser` 就地编辑。其他字段、未知顶层键、该数组之外的注释、缩进与 CRLF/LF 换行都逐字节保留；`cardOrder` 数组内部的注释可能丢失，生成的模板对此有说明。保存在服务进程内通过一条 promise 链串行，两个面板不会交错读-改-写。文件保留原权限（读不到时 0600），先写 `<path>.<pid>.<rand>.tmp`，再 `rename` 发布。
 - 发布前服务会重读文件：磁盘内容变了就返回 409 `config-conflict`，不覆盖任何数据。新建文件是排他创建（硬链接，失败时回退到排他 `wx` 打开），期间出现的文件绝不会被替换。与其他进程的写入竞态无法被绝对排除，见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md#验证)。
 - 结构损坏的文件（语法错误、重复顶层键、根不是对象）只在保存顺序时原地重建：完整模板 + 提交的顺序，然后把旧原文逐行追加为 `//` 注释，并带双语标记。不会生成 `.bak` 或其他备份文件，旧版本留下的备份也不会被删除。字段值错误**不会**触发重建——只编辑 `cardOrder`，坏值留在文件里由用户自己修。服务把 `{ at, restored, defaulted, previousText: 'appended-comments' }` 记在内存里、只在服务存活期内有效；重启后提示消失，文件里的注释保留。回报中绝不含旧原文、密钥、密钥长度或密钥前缀。
@@ -292,7 +299,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
 | 路径 | 作用 |
 | --- | --- |
 | `GET /health` | 原有契约 `{ ok, name, apiVersion }`，未改动。 |
-| `GET /config` | 完整文件状态：`configPath`、`baseUrl`、`host`、`loopback`、`apiKeyConfigured`、`refreshSeconds`、`fontScale`、`fontScaleInvalid`、`cardOrder`、`cardOrderInvalid`、`language`、`languageInvalid`、`recovery`（重建后为 `{ at, restored, defaulted, previousText: 'appended-comments' }`，否则 `null`）、`source`（`file` 或 `default`）、`present`、`validity`（`missing` / `valid` / `invalid` / `unreadable`）、`issue`（文档级或致命问题，否则 `null`）与 `issues`（`{ field, kind, message }` 数组）。任何字段都不可能承载密钥。 |
+| `GET /config` | 完整文件状态：`configPath`、`baseUrl`、`host`、`loopback`、`apiKeyConfigured`、`refreshSeconds`、`fontScale`、`fontScaleInvalid`、`cardOrder`、`cardOrderInvalid`、`language`、`languageInvalid`、`providerIcons`、`recovery`（重建后为 `{ at, restored, defaulted, previousText: 'appended-comments' }`，否则 `null`）、`source`（`file` 或 `default`）、`present`、`validity`（`missing` / `valid` / `invalid` / `unreadable`）、`issue`（文档级或致命问题，否则 `null`）与 `issues`（`{ field, kind, message }` 数组）。任何字段都不可能承载密钥。 |
 | `POST /config/create` | 体 `{}` 或 `{ "order"?: string[] }`；200 `{ ok: true, created, present: true }`。幂等：文件已存在则原样保留且 `created` 为 `false`。`order` 为 0–500 个字符串、每个 1–200 字符；其余一律 400 `bad-request`。 |
 | `POST /config/order` | 体 `{ "order": string[] }`；200 `{ ok: true, order, recovery }`。1–500 个字符串、每个 1–200 字符；其余一律 400 `bad-request`。字段值错误不触发重建，结构损坏才重建。 |
 | `GET /v1/magpie/usage?period=today\|7d\|30d` | 规范化后的用量汇总。 |
@@ -302,7 +309,7 @@ $XDG_CONFIG_HOME/openchamber-magpie-usage/config.jsonc
 配置写入的细节：
 
 - 同一进程内所有写入串成一条 promise 链，两个面板不会交错读-改-写。失败的写入不会阻塞队列。
-- 合并只替换根级 `cardOrder`，用 `jsonc-parser` 就地编辑；`fontScale`、`language`、`refreshSeconds`、未知键与该数组之外的注释都逐字节保留。
+- 合并只替换根级 `cardOrder`，用 `jsonc-parser` 就地编辑；`fontScale`、`language`、`refreshSeconds`、`providerIcons`、未知键与该数组之外的注释都逐字节保留。
 - 读文件 → 编辑 → 写 `<path>.<pid>.<rand>.tmp` → 按原文件权限 `chmod` 临时文件（读不到时 0600）→ 再读一次原文件，内容已变则以 409 `config-conflict` 中止 → `rename` 覆盖。
 - 新建是排他的：硬链接（失败时回退到排他 `wx` 打开）绝不会覆盖期间出现的文件。`POST /config/create` 或顺序保存创建的文件，平台支持时权限为 0600。
 - 结构损坏的文件原地重建：完整模板 + 提交的顺序，再把旧原文逐行追加为 `//` 注释并带双语标记。不写 `.bak`，也不删除旧备份。服务把 `{ at, restored, defaulted, previousText: 'appended-comments' }` 记在内存里供 `/config` 回报；重启后提示清空，文件注释保留。
@@ -350,4 +357,4 @@ upstream-redirect (跨源重定向被拒)
 
 MIT。见 [LICENSE](LICENSE)。
 
-厂商标识（WorkBuddy、Antigravity、DeepSeek、Kimi、Command Code、opencode、OpenRouter、OpenAI、magpie）来自 [yetone/magpie](https://github.com/yetone/magpie) 的 `internal/gui/assets/icons/`，与 magpie 本身同为 MIT，其中多数出自 lobe-icons。商标与标识归各自所有者，此处仅用于标注额度卡对应的供应商；`generic` 字形是本项目自绘的兜底图形。
+厂商标识由 `tools/icons/sync.ts` 从 [yetone/magpie](https://github.com/yetone/magpie) 的 `main` 分支（MIT）同步进两份生成物 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`；生成物头部记录来源仓库、分支与提交 sha——当前为 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`——以及归属声明，其中多数出自 lobe-icons。商标与标识归各自所有者，此处仅用于标注额度卡对应的供应商；PNG 与带 `-color` 后缀的标识保留品牌色，其余随宿主主题着色；`generic` 字形是本项目自绘的兜底图形。

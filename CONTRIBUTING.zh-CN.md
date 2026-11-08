@@ -27,6 +27,7 @@ bun run build          # panel/main.js 与 service/main.js
 bun run build:panel    # 只构建面板
 bun run build:service  # 只构建服务
 bun run typecheck      # tsc --noEmit
+bun run icons:sync     # 从 yetone/magpie main 强制同步图标（--force）
 ```
 
 - `panel/main.js` 是 classic IIFE。沙箱 iframe 不能加载 ESM。
@@ -35,12 +36,26 @@ bun run typecheck      # tsc --noEmit
 - 两个产物都要提交。改了源码却没有重建产物，视为未完成。
 - 构建脚本不创建输出目录。新增输出目录时，先提交其中的第一个产物，或在构建前手动建目录。
 - `bun run build` 只产出上面两个 JS 文件。`panel/index.html` 与 `panel/styles.css` 是静态包文件：`index.html` 链接样式表。它们不是构建产物。包内没有字体资产，样式表也没有 `@font-face` 规则；面板在运行时为自带的界面字族声明 `@font-face`，并从已批准的 jsDelivr 源载入字体文件。
+- 两份图标生成物是源码输入，不是构建输出，必须提交；同步后自动执行 `bun run build:panel`。`providerIcons` 进入 `/config` 与配置模板，所以 `bun run build` 里 `service/main.js` 也会重建。
+- 面板产物 `panel/main.js` 必须小于 900KB，由测试断言。
+
+### 图标同步
+
+- `bun run icons:sync` 强制执行 `bun tools/icons/sync.ts --force`；没有环境变量开关。
+- `tools/icons/sync.ts` 从 yetone/magpie 的 `main` 分支真实拉取：先请求 GitHub API `commits/main` 条件请求，ETag 或 sha 未变就跳过；失败时依次回退 `git ls-remote` → HTTP `info/refs` 与 commits atom 的备用解析 → 完整 codeload 快照并按固定 sha 取源 → 仓库里已提交的旧完整生成对。这是实现全量回退的手段，不是新的同步入口。
+- 条件请求匿名发出，仍受 GitHub 出口 IP 配额限制；官方只保证正确带 `Authorization` 头的 304 不计入 primary rate limit，secondary 限制仍适用（[官方说明](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#use-conditional-requests)）。同步不加 Token。
+- 下载并发 8–16；SVG 404 时改取同名 PNG。
+- 解析 magpie 的 presets、market、agent 与 provider 补充来源；数量阈值只有 4 项：presets ≥ 40、agent ≥ 30、market provider ≥ 10、assets ≥ 40，不为 googleApp/accountCards 新增门槛；任一步失败整体回退到上一次结果，只发一条告警。
+- 生成物是 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`：固定排序，内嵌来源仓库、`main` 分支与提交 sha（当前记录 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`，以生成物头部为准），以及「图标归各自所有者，MIT 来自 yetone/magpie」的归属声明，不含时间戳。不要手改，改动只能来自 `bun run icons:sync`。
+- 缓存在 `.cache/magpie-icons/`，已被 `.gitignore` 排除，不提交。
+- 渲染：PNG 与带 `-color` 后缀的图标是彩色（data URI `<img>`），其余图标用 `currentColor` 遮罩；彩色图标没有 `-color` 变体时显示为剪影，这是选定的代价。`generic` 是本项目自绘的兜底字形，不来自生成物。
+- 解析链（`src/shared/quotas-view.ts` 的 `logoFor`）：`providerIcons` 覆盖 → 生成的映射 → 与 id 同名的打包文件（`id`、`id-color`、`id.png`；PNG 图标 `base` 与 `base.png` 两种别名都可命中）→ `generic`。只有已打包的图标名能生效，坏名静默落到下一步。本机自定义渠道（例如自建 OpenAI 兼容端点）不保证自动命中，需要时在 `providerIcons` 里自行覆盖。
 
 面板入口是 `src/panel/main.ts`（`connectHost()` 与挂载）。面板实现是 `src/panel/app.ts`（`mountPanel`）。运行时语言包由 `app.ts` 导入，并在构建期内联进 `panel/main.js`。
 
 ## 字号（fontScale）
 
-面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。guest 帧看不到宿主文档的 `FontFace` 集合，所以 `src/panel/fonts.ts` 为 OpenChamber 自带的字族（Inter、Noto Sans、Fira Code 等）声明同名 `@font-face` 规则，并从 jsDelivr 载入 Latin WOFF2；`contributes.origins` 声明该 CDN，安装对话框会请求用户批准。扩展不携带字体文件或字体许可；自定义或系统字族直接使用本地回退。`fontScale` 只控制大小，不决定用哪款字体。
+面板使用宿主的字体栈：`--oc-font` 与 `--oc-mono` 来自 OpenChamber 的主题。扩展不携带任何字体、`@font-face` 规则或字体许可文件；`fontScale` 只控制大小，不决定用哪款字体。
 
 `config.jsonc` 接受 `fontScale`：50–200 的整数，默认 100。100 对应 14px 基准；字号按 12px 设计稿编写，因此 100 是旧尺寸的 14/12。根字号为 `14px × fontScale / 100`，面板所有字号均为 rem。
 
@@ -89,7 +104,14 @@ bun run typecheck      # tsc --noEmit
 - 结构损坏的文档（语法错误、重复顶层键、根不是对象）只在保存顺序时重建：完整模板 + 提交的顺序，再把旧原文逐行追加为带双语标记的 `//` 注释。不生成 `.bak`，也不删除旧备份。字段值错误不重建——只改 `cardOrder`。读不到、权限不足或非普通文件的路径绝不被覆盖，也绝不报成功。
 - 服务把 `{ at, restored, defaulted, previousText: 'appended-comments' }` 记在内存里直到重启；回报中绝不含旧原文，也绝不含任何由密钥推导出的内容。
 
-覆盖：`tests/config-document.test.ts`（检查、恢复、就地编辑）、`tests/service.test.ts`（`POST /config/create`、`POST /config/order`、`/config` 回报）、`tests/service-bundle.test.ts`（真实 Node 启动产物后的 `/config`、创建与顺序写盘）、`tests/panel-host.test.ts`（卡片外壳、创建流程与读取失败状态）。
+厂商标识（`providerIcons`）：
+
+- 根级宽松映射：键是 provider 名最后一个 `/` 之后的部分，值是已打包的图标名。最多 200 项，键与值各不超过 80 字符；键可以是任意 own 字符串键（`__proto__`、`constructor` 只作普通映射），值不是对象时整体丢弃，坏项静默丢弃，未知图标名由面板静默忽略。它不产生新的 `invalid`，不改变配置卡卡头。
+- 新建文件的七字段模板默认带 `{ "~keys": "magpie" }`。已有有效文件不会被自动加上该字段，缺该字段的文件生效值为空映射；需要时自行添加。结构损坏重建时，旧 `providerIcons` 映射能从原文证明完整就原样保留，只有无法恢复时才回退模板默认 `{ "~keys": "magpie" }`。
+- `GET /config` 回报 `providerIcons`，内容不含任何由密钥推导的信息。
+- 结构损坏重建时，`providerIcons` 只从可证明完整的根级对象恢复并只保留其中的有效字符串项，否则回退模板默认；其余字段的恢复行为不变。
+
+覆盖：`tests/config.test.ts`（`providerIcons` 宽松对象解析）、`tests/config-document.test.ts`（检查、恢复、就地编辑）、`tests/icons-parse.test.ts`（图标同步：Go/JSON 三源与补充模式的解析夹具、缓存/ETag/未变跳过/失败回退、并发文件锁、SVG 转 PNG、来源数量阈值、生成物变更后的构建与原子回滚、可复现性）、`tests/service.test.ts`（`POST /config/create`、`POST /config/order`、`/config` 回报）、`tests/service-bundle.test.ts`（真实 Node 启动产物后的 `/config`、创建与顺序写盘）、`tests/quotas-view.test.ts`（`logoFor` 图标解析链）、`tests/panel-bundle.test.ts`（面板产物断言）、`tests/panel-host.test.ts`（卡片外壳、创建流程、读取失败状态与面板时序）。
 
 ## 测试
 
@@ -101,7 +123,7 @@ bun run check   # 类型检查 -> 构建 -> 全部测试
 
 `bun run check` 的顺序由 `package.json` 固定为 typecheck → build → test：先构建再测试，让测试（尤其是产物测试）验证的是本次源码生成的产物。测试总数以本次 `bun run check` 输出为准，不再在文档里写死。
 
-测试全部离线：假网关、临时配置目录，以及测试客户端与 `src/service/server.ts` 服务模块之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。除 `tests/service-bundle.test.ts` 外，源码级服务测试在 Bun 下加载 `src/` 服务模块——它们加起来只覆盖源码/桥接与部分本地 HTTP，不证明磁盘上的 `service/main.js` 能在 Node 下启动。
+测试主体离线：假网关、临时配置目录，以及测试客户端与 `src/service/server.ts` 服务模块之间的真实 HTTP 往返。面板测试使用 fake host 与 happy-dom；不启动 HTTP server、不连接真实宿主、不读写用户配置目录。唯一可能联网的是图标预载：`bunfig.toml` 的 `[test] preload = ["./tools/icons/preload.ts"]` 让每次 `bun test`（含单文件）先执行图标同步，可能联网、改写生成物并重建面板产物；文件锁防止并发互相踩踏；`bun test` 是 Bun 内置命令，不执行 `pretest`/`posttest`；断网时回退到已提交的生成物，测试继续。除 `tests/service-bundle.test.ts` 外，源码级服务测试在 Bun 下加载 `src/` 服务模块——它们加起来只覆盖源码/桥接与部分本地 HTTP，不证明磁盘上的 `service/main.js` 能在 Node 下启动。
 
 提交前 `bun run check` 必须通过。CI 还会运行：
 
@@ -109,25 +131,27 @@ bun run check   # 类型检查 -> 构建 -> 全部测试
 git diff --exit-code -- panel/main.js service/main.js
 ```
 
+CI 与 `main` 同步：上游图标更新会让这条 diff 变红。处理顺序是 `bun run icons:sync` → 审查两份生成物与产物 diff → 提交它们，不手改生成物。`tests/service-bundle.test.ts`（真实 Node 启动磁盘产物）的职责不变，只是产物会随图标同步重建。
+
 ### 测试覆盖
 
 | 文件 | 内容 |
 | --- | --- |
-| `tests/config.test.ts` | 经 `parseConfigText` 的配置校验：文档级失败（JSON 损坏、根不是对象）、http/https 规则、环回判定、凭据与查询串、密钥字符、刷新区间、未知键；`cardOrder` 宽松解析、顺序键编码、`#2` 后缀、已知/未知/过期键的排序；`language` 默认值、显式值、坏值回退且不降级端点；`fontScale` 默认值、50–200 区间与坏值回退且不降级端点。 |
-| `tests/config-document.test.ts` | 严格 JSONC 检查：行/块注释、字符串内的 `//` 与 `/*`、尾随逗号、截断的字符串、空内容、重复顶层键（允许嵌套重复）、根不是对象；单个前导 UTF-8 BOM 被接受且本地 `cardOrder` 编辑保留，第二个/中途 BOM 仍无效；宽松字段错误保留端点而致命错误整体回退；端点/密钥成组的保守恢复、重复字段、无法证明的值、`auto`/`en`/`zh-CN` 语言白名单；只改 `cardOrder` 且保留注释、未知键、缩进与 CRLF；生成的模板本身是合法 JSONC 且只有六个生效键。 |
+| `tests/config.test.ts` | 经 `parseConfigText` 的配置校验：文档级失败（JSON 损坏、根不是对象）、http/https 规则、环回判定、凭据与查询串、密钥字符、刷新区间、未知键；`cardOrder` 宽松解析、顺序键编码、`#2` 后缀、已知/未知/过期键的排序；`language` 默认值、显式值、坏值回退且不降级端点；`fontScale` 默认值、50–200 区间与坏值回退且不降级端点；`providerIcons` 宽松对象解析（非对象整体丢弃、坏项静默丢弃、200 项与 80 字符上限、任意 own 键、未知图标名静默忽略、不产生新 `invalid`）。 |
+| `tests/config-document.test.ts` | 严格 JSONC 检查：行/块注释、字符串内的 `//` 与 `/*`、尾随逗号、截断的字符串、空内容、重复顶层键（允许嵌套重复）、根不是对象；单个前导 UTF-8 BOM 被接受且本地 `cardOrder` 编辑保留，第二个/中途 BOM 仍无效；宽松字段错误保留端点而致命错误整体回退；端点/密钥成组的保守恢复、重复字段、无法证明的值、`auto`/`en`/`zh-CN` 语言白名单；只改 `cardOrder` 且保留注释、未知键、缩进与 CRLF；生成的模板本身是合法 JSONC 且只有七个生效键（含 `providerIcons`）。 |
 | `tests/i18n.test.ts` | 注册表合法性、键齐全、占位符一致、CLDR 复数类别（en 的 `one/other`、zh-CN 的 `other`）、插值/回退、`resolveLocale` 的精确匹配与 unsupported 标记；阿拉伯语 `test` 夹具是 RTL 但绝不是运行时匹配。 |
 | `tests/format.test.ts` | 数字/成本/积分/百分比/时间格式化，命中率分母为 0，窗口百分比回退链，金额行优先级。 |
-| `tests/quotas-view.test.ts` | pool 分组与分层折叠（Antigravity 3 行、9 个分层隐藏）、时长排序、无 pool 窗口共用一行、剩余口径金额行、余额拆分、最紧剩余、图标映射与兜底。 |
-| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`validity`、`recovery`、旧 `config.json` 被忽略、BOM 前缀文件保留端点/密钥）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语六字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、保留 BOM 与数组外注释、缺失时新建、原地重建且无 `.bak`、BOM 文件重建保留 BOM 并注释去 BOM 的旧正文、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。全部在 Bun 下从 `src/` 加载服务模块。 |
+| `tests/quotas-view.test.ts` | pool 分组与分层折叠（Antigravity 3 行、9 个分层隐藏）、时长排序、无 pool 窗口共用一行、剩余口径金额行、余额拆分、最紧剩余、`logoFor` 图标解析链与兜底。 |
+| `tests/icons-parse.test.ts` | 图标同步工具 `tools/icons/` 的解析：Go/JSON 三源与补充模式的解析夹具（`tests/fixtures/icons/`）、缓存/ETag/未变跳过/失败回退、并发文件锁、SVG 404 转 PNG、来源数量阈值、生成物变更后的构建与原子回滚、同步可复现。 |
+| `tests/service.test.ts` | Bearer 校验、`/health` 契约、`/config` 回报（路径、端点、不含密钥的 `apiKeyConfigured`、`fontScale`/`fontScaleInvalid`、`providerIcons`、`validity`、`recovery`、旧 `config.json` 被忽略、BOM 前缀文件保留端点/密钥）、改文件即时生效、方法与路径组合 405/404；`POST /config/create`（双语七字段模板、空体、显式顺序、已有文件原样保留、坏体、拒绝非普通路径）；`POST /config/order`（只改 `cardOrder`、保留未知键与权限、保留 BOM 与数组外注释、缺失时新建、原地重建且无 `.bak`、BOM 文件重建保留 BOM 并注释去 BOM 的旧正文、字段错误不重建、拒绝坏体与超大体积、并发写入、401）。全部在 Bun 下从 `src/` 加载服务模块。 |
 | `tests/service-bundle.test.ts` | 磁盘产物 `service/main.js` 的真实 Node 回归：把 bundle 复制到没有 `node_modules` 的隔离临时目录，用 `PATH` 上的真实 Node 子进程（绝不用 Bun 的 `process.execPath`）启动，覆盖 Bearer 鉴权、`/health` 契约、文件缺失回退、`POST /config/create` 的双语模板、`config.jsonc` 字段到达 `/config`、usage/quotas 经真实 HTTP 转发到假网关、`POST /config/order` 保存后保留注释与未知键且不回显密钥。仍解析 `./impl/*` 的 bundle 会在这里失败而不是只在宿主上失败。找不到 Node 时测试直接失败，不跳过。 |
 | `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符。 |
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
 | `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、不用 `localStorage`/`sessionStorage`/IndexedDB/cookie 且只用宿主实例存储保存首开标记（绝不存配置、路径、密钥、顺序或折叠状态）、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
-| `tests/panel-fonts.test.ts` | 面板自行声明宿主自带的界面字族：sans 与 mono 字体栈按宿主权重生成 `@font-face`，Fixel Text 使用宿主 CDN 文件，Atkinson Hyperlegible 载入 400 与 700，系统或自定义字体栈不声明任何字体面，重复宿主快照不会重复添加字族。测试进程不发出网络请求。 |
 | `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）；配置读取失败（`/config` 失败或结构异常时卡头显示 `Unable to check`/`无法检查` 而不是 `Invalid`/`Checking`，`config.loadFailed` 显示原因且不回显上游原文，下一轮读取成功后恢复真实有效性，usage/quotas 失败不会把有效配置变成 `Unable to check`，失败期间不写存储、不触发创建）。 |
 | `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
-| `tests/manifest.test.ts` | 清单路径、必需构建产物、包元数据与声明的字体来源。 |
+| `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
 | `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |
 
 ## 验证
@@ -148,6 +172,7 @@ git diff --exit-code -- panel/main.js service/main.js
 - 让写盘失败（配置路径被目录占用）：面板保留新顺序，配额标题旁出现 `order not saved`，提示里带服务给出的原因。
 - 2026-11-08 服务启动故障修复验证：`bun run check`（typecheck → build → test）全绿，293 个测试/14 个文件通过，两次构建字节一致；`tests/service-bundle.test.ts` 把 `service/main.js` 复制到无 `node_modules` 的隔离目录，由 `PATH` 上的真实 Node 启动，覆盖鉴权、`/health`、`/config`、`POST /config/create`、假网关 usage/quotas 转发与 `POST /config/order` 写盘。面板回归也覆盖异步初始化等待后重新检查配置新鲜度，以及手动创建成功后清除已解决的自动创建错误。
 - 同次修复还用临时目录中的服务产物在 Node 22.23.4 下连接真实环回 Magpie 网关（`127.0.0.1:3425`）：`/config`、用量、配额均返回 200，配额返回 14 张卡。未读取用户配置或使用真实密钥；这不等于验证了 OpenChamber 安装或侧栏外观。
+- 2026-11-09 图标轮（主控提供）：`bun install --frozen-lockfile` 与 `bun run build` 均 exit 0（锁文件未变、两份产物已构建）；Node 22.23.4 把磁盘服务产物复制到无 `node_modules` 的隔离目录，用临时新配置（不读真实用户文件、不用真实密钥）验证创建、`/config` 与配额均为 200、15 张卡：生成映射自动命中 9 卡 + 新模板 `~keys` 1 卡，5 个自定义渠道（ai-studio、gemini-web、our-free-model、openai-mm、corecode）回退 `generic`。这不是真实宿主外观验证。同轮把该隔离服务经真实 HTTP 桥接到 happy-dom 挂载的当前 `mountPanel`（fake `host.serviceRequest`）：15 个 DOM 卡与 `data-logo` 均与解析结果一致、没有外链 `img`，exit 0；两份产物重复构建哈希一致。这仍不是 Electron/OpenChamber 真实宿主，也不是像素验证，截图未动。正式 `bun run check`（未绕过 preload）exit 0：394 通过、0 失败、4312 断言、15 个文件，顺序 typecheck → build → test（日志：主控 `temp/check-full.txt`）；随后 `bun run build` exit 0，`panel/main.js` 537,505 字节、SHA-256 `FC0EA237A246FC084E5500B7751B4B6EAC40F2C3DA2D4A4B8361C8372156D22F`，`service/main.js` 80,202 字节、SHA-256 `B2EED0ED29E0BDD20304D576D7732D80080E9EC6AE13566D82FC3B2A029CCA62`，与前一次构建字节相同；`git diff --check` exit 0；生成物 source sha 仍为 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`（以生成物为准）。另有正式单文件 `bun test tests/config.test.ts` 49 通过 0 失败，以及隔离副本断网 + git 不可用下 preload 1 通过 1 警告、两生成物与 `panel/main.js` 字节不变的回退证据。
 
 未验证：
 
@@ -160,6 +185,9 @@ git diff --exit-code -- panel/main.js service/main.js
 - 配置读取失败时的 `Unable to check`/「无法检查」状态、`config.loadFailed` 提示与成功重试恢复，只由 `tests/panel-host.test.ts` 的 fake host 覆盖；真实 Electron 宿主下尚未验证。
 - `docs/images/` 里的截图同样早于 `config.jsonc` 与默认收起的配置卡。
 - 跨进程写入竞态：写入在单个服务进程内串行，发布前会重读文件，但另一个进程在这次读取与 `rename` 之间写入的情况无法由测试套件排除。
+- 图标同步契约与 `providerIcons` 尚未在真实宿主下验证：Node 22 隔离验证只覆盖服务产物层，右侧栏像素外观与真实宿主交互仍未做；本轮没有重截 `docs/images/`，截图仍早于本次改动。
+- Windows 上真实构建的超时行为，以及服务跨进程写入在 crash 时的原子性：未知，未验证。
+- 图标同步的未解决风险：锁崩溃后 PID 被无关活进程复用可能让 `.cache/magpie-icons/` 锁持续 locked，需要确认无同步进程后人工清理被忽略的缓存锁；stale 锁的跨进程抢占存在极窄竞态，未绝对证明；codeload 快照没有压缩/解压体积硬上限（可能内存压力），pax 头 sha 依赖格式，格式无法证明时安全保留旧生成物。
 
 ## 调试
 
@@ -171,7 +199,7 @@ git diff --exit-code -- panel/main.js service/main.js
 - `bun test tests/service-bundle.test.ts` 检查磁盘上的 `service/main.js` 能被真实 Node 启动（需要 `PATH` 中有 Node）。
 - `bun test tests/panel-host.test.ts` 检查面板到宿主的桥接。
 - `GET /health` 返回 `{ ok, name, apiVersion }`。服务只绑 `127.0.0.1`，要求 `Authorization: Bearer $OPENCHAMBER_SERVICE_TOKEN`。如果必须探测运行中的服务，使用环境里的宿主 token；不要把 token 粘进 issue、日志或提交。
-- `GET /config` 回报 `configPath`、`baseUrl`、`host`、`loopback`、`language`、`languageInvalid`、`cardOrder`、`cardOrderInvalid`、`fontScale`、`fontScaleInvalid`、`refreshSeconds`、`recovery`、`source`、`present`、`validity`、`issue`、`issues`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。写路由是 `POST /config/create` 与 `POST /config/order`；其他方法/路径组合一律 405 或 404。
+- `GET /config` 回报 `configPath`、`baseUrl`、`host`、`loopback`、`language`、`languageInvalid`、`providerIcons`、`cardOrder`、`cardOrderInvalid`、`fontScale`、`fontScaleInvalid`、`refreshSeconds`、`recovery`、`source`、`present`、`validity`、`issue`、`issues`，以及 `apiKeyConfigured`（布尔值，绝不是密钥）。写路由是 `POST /config/create` 与 `POST /config/order`；其他方法/路径组合一律 405 或 404。
 - 上游网关是环回地址时可直接探测：`GET http://127.0.0.1:3425/v1/magpie/usage?period=today` 与 `GET http://127.0.0.1:3425/v1/magpie/quotas`。
 
 服务每个请求都重读 `config.jsonc`，改好文件即可生效，不用重启。语言改动在下一轮面板刷新（默认 60 秒）生效。服务不记录 token；不要破坏这一点。
@@ -324,7 +352,9 @@ import zhCN from '../../panel/locales/zh-CN.json';
 - 截图符合命名、配对、裁切、脱敏与宽度规则。
 - tracked 文件里没有密钥、token、邮箱、账户 ID 或本机绝对路径。
 - 两篇 README 与两篇 CONTRIBUTING 在命令、路由、限制与行为上一致。
+- 图标生成物只由 `bun run icons:sync` 更新：不手改 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`。
+- 产物 diff 因上游图标更新而失败时：`bun run icons:sync` → 审查生成物与产物 diff → 提交。
 
 ## 许可
 
-提交贡献即表示你同意按本仓库的 MIT 许可授权。
+提交贡献即表示你同意按本仓库的 MIT 许可授权。厂商标识由 `tools/icons/sync.ts` 从 yetone/magpie（MIT）同步进两份生成物，生成物头部记录来源仓库、分支与提交 sha（当前 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`）；商标与标识归各自所有者，仅用于标注额度卡对应的供应商。

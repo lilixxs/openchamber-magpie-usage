@@ -29,6 +29,7 @@ var fallbackConfig = () => ({
   cardOrderInvalid: false,
   language: DEFAULT_LANGUAGE,
   languageInvalid: false,
+  providerIcons: {},
   source: "default",
   present: false,
   validity: "missing",
@@ -106,6 +107,34 @@ var parseLanguageValue = (raw) => {
   }
   return { ok: true, value: raw };
 };
+var MAX_PROVIDER_ICONS = 200;
+var MAX_PROVIDER_ICON_LENGTH = 80;
+var DEFAULT_PROVIDER_ICONS = Object.freeze({ "~keys": "magpie" });
+var parseProviderIcons = (value) => {
+  const icons = {};
+  if (!isRecord(value))
+    return icons;
+  let count = 0;
+  for (const key of Object.keys(value)) {
+    if (count >= MAX_PROVIDER_ICONS)
+      break;
+    if (key === "" || key.length > MAX_PROVIDER_ICON_LENGTH)
+      continue;
+    if (!Object.prototype.hasOwnProperty.call(value, key))
+      continue;
+    const raw = value[key];
+    if (typeof raw !== "string" || raw === "" || raw.length > MAX_PROVIDER_ICON_LENGTH)
+      continue;
+    Object.defineProperty(icons, key, {
+      value: raw,
+      enumerable: true,
+      writable: true,
+      configurable: true
+    });
+    count += 1;
+  }
+  return icons;
+};
 var parseCardOrderDetailed = (value) => {
   if (value === undefined)
     return { order: [], invalid: false, message: null };
@@ -182,6 +211,7 @@ var parseConfigObject = (value) => {
   if (cardOrder.invalid) {
     issues.push({ field: "cardOrder", kind: "invalid", message: cardOrder.message ?? "cardOrder is invalid." });
   }
+  const providerIcons = parseProviderIcons(value.providerIcons);
   return {
     ok: true,
     issues,
@@ -197,6 +227,7 @@ var parseConfigObject = (value) => {
       cardOrderInvalid: cardOrder.invalid,
       language,
       languageInvalid,
+      providerIcons,
       source: "file",
       present: true,
       validity: issues.length === 0 ? "valid" : "invalid",
@@ -1358,6 +1389,59 @@ var invalidConfig = (issue, message) => ({
     issues: [issue]
   }
 });
+var materialiseIconMap = (node) => {
+  const bag = {};
+  if (node.type !== "object" || !node.children)
+    return bag;
+  for (const child of node.children) {
+    if (child.type !== "property")
+      continue;
+    const keyNode = child.children?.[0];
+    const valueNode = child.children?.[1];
+    if (!keyNode || typeof keyNode.value !== "string" || !valueNode)
+      continue;
+    Object.defineProperty(bag, keyNode.value, {
+      value: valueNode.type === "string" ? valueNode.value : null,
+      enumerable: true,
+      writable: true,
+      configurable: true
+    });
+  }
+  return bag;
+};
+var providerIconsFromTree = (tree) => {
+  if (!tree || tree.type !== "object" || !tree.children)
+    return null;
+  let valueNode;
+  for (const child of tree.children) {
+    if (child.type !== "property")
+      continue;
+    const key = child.children?.[0]?.value;
+    if (key === "providerIcons")
+      valueNode = child.children?.[1];
+  }
+  if (!valueNode)
+    return null;
+  if (valueNode.type !== "object")
+    return {};
+  return parseProviderIcons(materialiseIconMap(valueNode));
+};
+var provedProviderIcons = (property, body) => {
+  const valueNode = property.children?.[1];
+  if (!valueNode || valueNode.length <= 0)
+    return null;
+  const slice = body.slice(valueNode.offset, valueNode.offset + valueNode.length);
+  if (slice.trim() === "")
+    return null;
+  const errors = [];
+  parse2(slice, errors, JSONC_PARSE_OPTIONS);
+  if (errors.length > 0)
+    return null;
+  const node = parseTree2(slice, [], JSONC_PARSE_OPTIONS);
+  if (!node || node.type !== "object")
+    return null;
+  return parseProviderIcons(materialiseIconMap(node));
+};
 var parseConfigText = (text) => {
   const inspection = inspectConfigDocument(text);
   if (inspection.state === "syntax") {
@@ -1377,6 +1461,10 @@ var parseConfigText = (text) => {
   if (!parsed.ok) {
     return invalidConfig({ field: parsed.field, kind: "invalid", message: parsed.message }, parsed.message);
   }
+  const { body } = splitLeadingBom(text);
+  const icons = providerIconsFromTree(parseTree2(body, [], JSONC_PARSE_OPTIONS));
+  if (icons !== null)
+    parsed.config.providerIcons = icons;
   return { config: parsed.config };
 };
 var RECOVERABLE_FIELDS = [
@@ -1384,7 +1472,8 @@ var RECOVERABLE_FIELDS = [
   "apiKey",
   "refreshSeconds",
   "fontScale",
-  "language"
+  "language",
+  "providerIcons"
 ];
 var allDefaulted = () => ({
   values: {
@@ -1392,7 +1481,8 @@ var allDefaulted = () => ({
     apiKey: null,
     refreshSeconds: DEFAULT_REFRESH_SECONDS,
     fontScale: DEFAULT_FONT_SCALE,
-    language: DEFAULT_LANGUAGE
+    language: DEFAULT_LANGUAGE,
+    providerIcons: { ...DEFAULT_PROVIDER_ICONS }
   },
   restored: [],
   defaulted: [...RECOVERABLE_FIELDS]
@@ -1496,6 +1586,18 @@ var recoverConfigValues = (text) => {
   scalar("language", parseLanguageValue, (value) => value === "auto" || value === "en" || value === "zh-CN", (value) => {
     result.values.language = value;
   });
+  if (!has("providerIcons")) {
+    defaulted.add("providerIcons");
+  } else {
+    const property = uniqueProperty("providerIcons");
+    const proved = property ? provedProviderIcons(property, body) : null;
+    if (proved !== null) {
+      result.values.providerIcons = proved;
+      restored.add("providerIcons");
+    } else {
+      defaulted.add("providerIcons");
+    }
+  }
   result.restored = RECOVERABLE_FIELDS.filter((field) => restored.has(field));
   result.defaulted = RECOVERABLE_FIELDS.filter((field) => defaulted.has(field));
   return result;
@@ -1618,7 +1720,8 @@ var TEMPLATE_DEFAULTS = {
   apiKey: null,
   refreshSeconds: 60,
   fontScale: 100,
-  language: "auto"
+  language: "auto",
+  providerIcons: { ...DEFAULT_PROVIDER_ICONS }
 };
 var orderBlock = (order) => JSON.stringify(order, null, 2).split(`
 `).map((line, index) => index === 0 ? line : `  ${line}`).join(`
@@ -1651,7 +1754,14 @@ var renderConfigTemplate = (order = [], values = TEMPLATE_DEFAULTS) => {
     "",
     '  // language: "auto", "en", or "zh-CN".',
     '  // language："auto"、"en" 或 "zh-CN"。',
-    `  "language": ${JSON.stringify(values.language)}`,
+    `  "language": ${JSON.stringify(values.language)},`,
+    "",
+    "  // providerIcons: map a provider (the last segment of its name) to a bundled icon name.",
+    "  // Unknown names are silently ignored; the normal generated, file-name, or generic fallback still applies.",
+    "  // providerIcons：把供应商（取名称末段）映射到面板内置的图标名；未知名称会被静默忽略，仍按既有的生成图标、文件名、通用图标顺序回退。",
+    "  // At most 200 entries; each key and each value is at most 80 characters.",
+    "  // 最多 200 项；每个键与值各不超过 80 个字符。",
+    `  "providerIcons": ${JSON.stringify(values.providerIcons)}`,
     "}",
     ""
   ].join(`
@@ -2068,6 +2178,7 @@ var createService = (options) => {
         cardOrderInvalid: config.cardOrderInvalid,
         language: config.language,
         languageInvalid: config.languageInvalid,
+        providerIcons: config.providerIcons,
         recovery: recoveryNotice,
         source: config.source,
         present: config.present,

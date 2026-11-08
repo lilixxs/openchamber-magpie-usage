@@ -313,6 +313,7 @@ describe('service bundle on real Node', () => {
     expect(template).toContain('// baseUrl：');
     expect(template).toContain('"cardOrder": []');
     expect(template).toContain('"language": "auto"');
+    expect(template).toContain('// providerIcons：');
     const active = template
       .split('\n')
       .filter((line) => !line.trimStart().startsWith('//'))
@@ -321,6 +322,10 @@ describe('service bundle on real Node', () => {
     expect(active).toContain('"apiKey": null');
     expect(active).toContain('"refreshSeconds": 60');
     expect(active).toContain('"fontScale": 100');
+    expect(active).toContain('"providerIcons": {"~keys":"magpie"}');
+    // The exact mapping behind the template line, independent of spacing: the
+    // active part of the template is strict JSON and parses whole.
+    expect(JSON.parse(active).providerIcons).toEqual({ '~keys': 'magpie' });
     // The example key sits in a comment and must never be an active value.
     expect(active).not.toContain('replace-with-your-gateway-key');
 
@@ -362,6 +367,7 @@ describe('service bundle on real Node', () => {
           '  /* key material lives here and must never be echoed elsewhere */',
           `  "apiKey": ${JSON.stringify(GATEWAY_KEY)},`,
           '  "unknownKeep": { "note": "kept verbatim" },',
+          '  "providerIcons": { "my-gateway": "claude" },',
           '  "cardOrder": []',
           '}',
           '',
@@ -379,10 +385,15 @@ describe('service bundle on real Node', () => {
         baseUrl: string;
         apiKeyConfigured: boolean;
         validity: string;
+        providerIcons: Record<string, string>;
       };
       expect(config.baseUrl).toBe(gateway.url);
       expect(config.apiKeyConfigured).toBe(true);
       expect(config.validity).toBe('valid');
+      // The mapping reaches /config as plain strings, never the key.
+      expect(config.providerIcons).toEqual({ 'my-gateway': 'claude' });
+      expect(report.text.includes(GATEWAY_KEY)).toBe(false);
+      expect(report.text.includes('my-gateway')).toBe(true);
 
       // Usage is forwarded with the key and the requested period.
       const usage = await getJson(spawned.url, '/v1/magpie/usage?period=7d', TOKEN);
@@ -430,6 +441,10 @@ describe('service bundle on real Node', () => {
       expect(saved).toContain('/* key material');
       expect(saved).toContain('"unknownKeep"');
       expect(saved).toContain('"baseUrl"');
+      // providerIcons is byte-preserved by the order save, under real Node.
+      expect(saved).toContain('"providerIcons": { "my-gateway": "claude" },');
+      expect(saved.includes(`"apiKey": ${JSON.stringify(GATEWAY_KEY)}`)).toBe(true);
+      expect(ordered.text.includes(GATEWAY_KEY)).toBe(false);
       // The saved cardOrder is exactly the submitted one, in order.
       const active = saved.split('\n').filter((line) => !line.trimStart().startsWith('//'));
       expect(active.join('\n').includes(JSON.stringify(ORDER[0]))).toBe(true);
