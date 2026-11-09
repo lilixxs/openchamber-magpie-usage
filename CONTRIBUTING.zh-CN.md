@@ -46,7 +46,7 @@ bun run icons:sync     # 从 yetone/magpie main 强制同步图标（--force）
 - 条件请求匿名发出，仍受 GitHub 出口 IP 配额限制；官方只保证正确带 `Authorization` 头的 304 不计入 primary rate limit，secondary 限制仍适用（[官方说明](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#use-conditional-requests)）。同步不加 Token。
 - 下载并发 8–16；SVG 404 时改取同名 PNG。
 - 解析 magpie 的 presets、market、agent 与 provider 补充来源；数量阈值只有 4 项：presets ≥ 40、agent ≥ 30、market provider ≥ 10、assets ≥ 40，不为 googleApp/accountCards 新增门槛；任一步失败整体回退到上一次结果，只发一条告警。
-- 生成物是 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`：固定排序，内嵌来源仓库、`main` 分支与提交 sha（当前记录 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`，以生成物头部为准），以及「图标归各自所有者，MIT 来自 yetone/magpie」的归属声明，不含时间戳。不要手改，改动只能来自 `bun run icons:sync`。
+- 生成物是 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`：固定排序，内嵌来源仓库、`main` 分支与提交 sha（以生成物头部为准），以及「图标归各自所有者，MIT 来自 yetone/magpie」的归属声明，不含时间戳。不要手改，改动只能来自 `bun run icons:sync`。
 - 缓存在 `.cache/magpie-icons/`，已被 `.gitignore` 排除，不提交。
 - 渲染：PNG 与带 `-color` 后缀的图标是彩色（data URI `<img>`），其余图标用 `currentColor` 遮罩；彩色图标没有 `-color` 变体时显示为剪影，这是选定的代价。`generic` 是本项目自绘的兜底字形，不来自生成物。
 - 解析链（`src/shared/quotas-view.ts` 的 `logoFor`）：`providerIcons` 覆盖 → 生成的映射 → 与 id 同名的打包文件（`id`、`id-color`、`id.png`；PNG 图标 `base` 与 `base.png` 两种别名都可命中）→ `generic`。只有已打包的图标名能生效，坏名静默落到下一步。本机自定义渠道（例如自建 OpenAI 兼容端点）不保证自动命中，需要时在 `providerIcons` 里自行覆盖。
@@ -357,4 +357,4 @@ import zhCN from '../../panel/locales/zh-CN.json';
 
 ## 许可
 
-提交贡献即表示你同意按本仓库的 MIT 许可授权。厂商标识由 `tools/icons/sync.ts` 从 yetone/magpie（MIT）同步进两份生成物，生成物头部记录来源仓库、分支与提交 sha（当前 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`）；商标与标识归各自所有者，仅用于标注额度卡对应的供应商。
+提交贡献即表示你同意按本仓库的 MIT 许可授权。厂商标识由 `tools/icons/sync.ts` 从 yetone/magpie（MIT）同步进两份生成物，生成物头部记录来源仓库、分支与提交 sha（以生成物头部为准）；商标与标识归各自所有者，仅用于标注额度卡对应的供应商。

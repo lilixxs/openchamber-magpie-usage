@@ -357,4 +357,4 @@ upstream-redirect (跨源重定向被拒)
 
 MIT。见 [LICENSE](LICENSE)。
 
-厂商标识由 `tools/icons/sync.ts` 从 [yetone/magpie](https://github.com/yetone/magpie) 的 `main` 分支（MIT）同步进两份生成物 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`；生成物头部记录来源仓库、分支与提交 sha——当前为 `4436b7d98f7abd0ca1b54d76ef1c7afc87367531`——以及归属声明，其中多数出自 lobe-icons。商标与标识归各自所有者，此处仅用于标注额度卡对应的供应商；PNG 与带 `-color` 后缀的标识保留品牌色，其余随宿主主题着色；`generic` 字形是本项目自绘的兜底图形。
+厂商标识由 `tools/icons/sync.ts` 从 [yetone/magpie](https://github.com/yetone/magpie) 的 `main` 分支（MIT）同步进两份生成物 `src/shared/provider-icons.generated.ts` 与 `src/panel/logos.generated.ts`；生成物头部记录来源仓库、分支与提交 sha——精确提交以生成物头部为准——以及归属声明，其中多数出自 lobe-icons。商标与标识归各自所有者，此处仅用于标注额度卡对应的供应商；PNG 与带 `-color` 后缀的标识保留品牌色，其余随宿主主题着色；`generic` 字形是本项目自绘的兜底图形。

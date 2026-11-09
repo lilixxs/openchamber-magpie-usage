@@ -1,6 +1,6 @@
 {
   "name": "openchamber-magpie-usage",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "OpenChamber extension for Magpie gateway usage and quota",
   "private": true,
   "type": "module",
