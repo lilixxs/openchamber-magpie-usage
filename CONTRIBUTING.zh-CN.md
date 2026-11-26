@@ -4,7 +4,7 @@
 
 ## 范围
 
-本仓库是 OpenChamber guest 扩展：一个沙箱面板加一个本地 Node 服务。改动必须保持面板与服务契约同步。面板只能使用 `host.*`；不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直连本地服务。它唯一用到的存储是经 `host.storage` 写入的实例作用域首开标记（见[配置文件](#配置文件)）。
+本仓库是 OpenChamber guest 扩展：一个沙箱面板加一个本地 Node 服务。改动必须保持面板与服务契约同步。面板只能使用 `host.*`；不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直连本地服务。它只通过 `host.storage` 存两个实例作用域的值：首开标记与 Token 口径（见[配置文件](#配置文件)）。
 
 ## 本地环境
 
@@ -148,8 +148,8 @@ CI 与 `main` 同步：上游图标更新会让这条 diff 变红。处理顺序
 | `tests/usage.test.ts` | 周期与密钥转发、缺省周期、非法周期、缺失字段不产生 NaN、401/403/500/超时/连不上/非 JSON/结构不符。 |
 | `tests/quotas.test.ts` | 全部卡片变体、`kept`/`refresh` 转发、节流、空缓存回退、跨源重定向拒绝、同源重定向跟随。 |
 | `tests/secret.test.ts` | 密钥不出现在 `/config`、日志、构建产物；源码无密钥字面量。 |
-| `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、不用 `localStorage`/`sessionStorage`/IndexedDB/cookie 且只用宿主实例存储保存首开标记（绝不存配置、路径、密钥、顺序或折叠状态）、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
-| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）；配置读取失败（`/config` 失败或结构异常时卡头显示 `Unable to check`/`无法检查` 而不是 `Invalid`/`Checking`，`config.loadFailed` 显示原因且不回显上游原文，下一轮读取成功后恢复真实有效性，usage/quotas 失败不会把有效配置变成 `Unable to check`，失败期间不写存储、不触发创建）。 |
+| `tests/panel-bundle.test.ts` | 面板是 classic IIFE、无 fetch/XHR、不用 `localStorage`/`sessionStorage`/IndexedDB/cookie 且只用宿主实例存储保存首开标记与 Token 口径（绝不存配置、路径、密钥、顺序或折叠状态）、只用 `--oc-*`、控件不在 `onReady` 内挂载且只挂一次、图标以 data URI 内联、两列网格与容器查询存在。 |
+| `tests/panel-host.test.ts` | 用 fake host 挂载面板：首屏 `/config`、usage、`kept=1` 请求与 KPI/额度卡；Token 口径的含缓存与不含缓存数值及其保存的选择；`HostRequestError` 各 code、服务错误词汇表、非 JSON 与响应形状错误且不回显上游原文；周期切换只重拉 usage；手动刷新带 `refresh=1`；throttled/stale 文案；键盘排序写入 `/config/order`、写失败显示 `order not saved`、展开/折叠；重复 `onReady` 不重复挂载、`serviceStatus` 四种徽章；`language` 与宿主 locale 的选择、回退与 `languageInvalid`；阿拉伯语回退英文且 `dir=ltr`；重复 ready 后的根字号；无效 `fontScale` 提示；图表标签：MM-DD 与 HH 文本、固定数量、各标签所在格，以及与 `fontScale` 无关；配置卡外壳（页脚前最后一张、默认收起、卡头状态只看文件有效性、重新挂载后复位、路径复制按钮的成功与失败反馈、恢复细节在卡体）；配置创建（首开只创建一次并记住、已有文件绝不覆盖、存储失败既不自动创建也不挡住手动按钮、确认/取消流程只发意图与顺序、创建失败可重试、标记写入失败绝不回滚文件）；配置读取失败（`/config` 失败或结构异常时卡头显示 `Unable to check`/`无法检查` 而不是 `Invalid`/`Checking`，`config.loadFailed` 显示原因且不回显上游原文，下一轮读取成功后恢复真实有效性，usage/quotas 失败不会把有效配置变成 `Unable to check`，失败期间不写存储、不触发创建）。 |
 | `tests/health.test.ts` | 面板与服务共用的 `/health` 契约。 |
 | `tests/manifest.test.ts` | 清单路径、必需构建产物与包元数据。 |
 | `tests/harness.ts`、`tests/fixtures.ts` | 假网关与抓取载荷夹具；支撑文件，不是测试套件。 |

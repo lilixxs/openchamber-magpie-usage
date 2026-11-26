@@ -157,6 +157,7 @@ type Responder = (request: GuestRequest) => Reply | Promise<Reply>;
 
 type StorageState = {
   values: Map<string, unknown>;
+  getKeys: string[];
   getCalls: number;
   setCalls: number;
   getError: Error | null;
@@ -187,6 +188,7 @@ const makeHost = (reply: Responder = respondOk): FakeHost => {
     status: 'ready',
     storage: {
       values: new Map<string, unknown>(),
+      getKeys: [],
       getCalls: 0,
       setCalls: 0,
       getError: null,
@@ -212,6 +214,7 @@ const makeHost = (reply: Responder = respondOk): FakeHost => {
     },
     storage: {
       get: async (key: string): Promise<unknown> => {
+        state.storage.getKeys.push(key);
         state.storage.getCalls += 1;
         if (state.storage.getError) throw state.storage.getError;
         if (state.storage.getGate) await state.storage.getGate;
@@ -425,7 +428,8 @@ describe('panel first paint', () => {
     expect(host.requests[2]?.query).toEqual({ kept: '1' });
 
     const values = [...root.querySelectorAll('.kpi .kpi-value')].map((node) => node.textContent);
-    expect(values).toEqual(['1.5k', '66.7%', '10', '≈$1.23', '3.5']);
+    // The token tile counts cache read and written by default: 1000 + 2000 + 500.
+    expect(values).toEqual(['3.5k', '66.7%', '10', '≈$1.23', '3.5']);
     expect([...root.querySelectorAll('.quo-card .quo-name')].map((node) => node.textContent)).toEqual([
       'DeepSeek',
       'OpenRouter',
@@ -856,6 +860,57 @@ describe('period and refresh', () => {
     await tick();
 
     expect(text(root.querySelector('.stamp-slot .stamp:last-child'))).toContain('fresh');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Token pick                                                                 */
+/* -------------------------------------------------------------------------- */
+
+const TOKENS_KEY = 'openchamber-magpie-usage:v1:tokens-with-cache';
+
+const tokenTile = (): { pick: HTMLButtonElement; value: string; sub: string } => {
+  const cell = root.querySelectorAll<HTMLElement>('.kpi')[0];
+  if (!cell) throw new Error('no token tile');
+  return {
+    pick: cell.querySelector<HTMLButtonElement>('.kpi-pick') as HTMLButtonElement,
+    value: text(cell.querySelector('.kpi-value')),
+    sub: text(cell.querySelector('.kpi-sub')),
+  };
+};
+
+describe('token pick', () => {
+  test('counts cache read and written by default, and the pick switches and saves', async () => {
+    const host = makeHost((request) =>
+      request.path === '/v1/magpie/usage'
+        ? json(usageReport('today', { totals: { ...usageReport().totals, cacheWrite: 100 } }))
+        : respondOk(request),
+    );
+    start(host);
+    await tick();
+
+    // input 1000 + cache read 2000 + cache write 100 + output 500.
+    expect(tokenTile().pick.getAttribute('aria-pressed')).toBe('true');
+    expect(tokenTile().value).toBe('3.6k');
+    expect(tokenTile().sub).toBe('in (with cache) 3.1k · out 500');
+
+    tokenTile().pick.click();
+    await tick();
+
+    expect(tokenTile().pick.getAttribute('aria-pressed')).toBe('false');
+    expect(tokenTile().value).toBe('1.5k');
+    expect(tokenTile().sub).toBe('in 1k · out 500');
+    expect(host.state.storage.values.get(TOKENS_KEY)).toMatchObject({ version: 1, withCache: false });
+  });
+
+  test('a saved pick of without cache starts without cache', async () => {
+    const host = makeHost();
+    host.state.storage.values.set(TOKENS_KEY, { version: 1, withCache: false });
+    start(host);
+    await tick();
+
+    expect(tokenTile().pick.getAttribute('aria-pressed')).toBe('false');
+    expect(tokenTile().value).toBe('1.5k');
   });
 });
 
@@ -1669,7 +1724,7 @@ describe('configuration check failures', () => {
     expect(root.querySelectorAll('.quo-card[data-key]').length).toBe(3);
     expect((root.querySelector('.config-create') as HTMLElement).hidden).toBe(true);
     expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
-    expect(host.state.storage.getCalls).toBe(0);
+    expect(host.state.storage.getKeys).not.toContain(INIT_KEY);
     expect(host.state.storage.setCalls).toBe(0);
   });
 
@@ -1808,7 +1863,7 @@ describe('configuration check failures', () => {
     start(host);
     await tick();
 
-    expect(host.state.storage.getCalls).toBe(0);
+    expect(host.state.storage.getKeys).not.toContain(INIT_KEY);
     expect(host.requests.filter((request) => request.path === '/config/create')).toEqual([]);
 
     failing = false;
@@ -1885,7 +1940,7 @@ describe('configuration check failures', () => {
       await tick();
       // The failed first read leaves the first-open flow pending with cards painted.
       expect(configStatusText()).toBe('Unable to check');
-      expect(host.state.storage.getCalls).toBe(0);
+      expect(host.state.storage.getKeys).not.toContain(INIT_KEY);
       expect(root.querySelectorAll('.quo-card[data-key]').length).toBe(3);
 
       failing = false;
@@ -1896,7 +1951,7 @@ describe('configuration check failures', () => {
       host.state.storage.getGate = gate;
       (root.querySelector('.refresh-slot button') as HTMLButtonElement).click();
       await tick();
-      expect(host.state.storage.getCalls).toBe(1);
+      expect(host.state.storage.getKeys.filter((key) => key === INIT_KEY)).toHaveLength(1);
 
       // A concurrent read fails while the storage read is still in flight.
       failing = true;

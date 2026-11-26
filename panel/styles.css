@@ -176,6 +176,31 @@ body .oc-sdk-badge {
   text-transform: uppercase;
 }
 
+/* The Token tile's label is the pick between counting cache traffic or not. */
+.kpi-pick {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.7917rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kpi-pick:hover {
+  color: var(--oc-fg);
+}
+
+.kpi-pick:focus-visible {
+  outline: 2px solid var(--oc-focus);
+  outline-offset: 1px;
+}
+
 .kpi-value {
   font-size: 1.3333rem;
   font-weight: 600;

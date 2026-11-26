@@ -33,12 +33,13 @@ describe('panel bundle', () => {
     expect(bundle.includes('正在读取本地服务')).toBe(true);
   });
 
-  test('uses only host instance storage, for the first-open marker', () => {
+  test('uses only host instance storage, for the marker and the token pick', () => {
     for (const key of ['localStorage', 'sessionStorage', 'indexedDB', 'document.cookie']) {
       expect({ key, found: bundle.includes(key) }).toEqual({ key, found: false });
     }
-    // The one approved exception: a versioned first-open marker in the host's
-    // instance storage. It must never carry the config, path, key, order, or fold state.
+    // The approved exceptions: a versioned first-open marker and the token
+    // pick, both in the host's instance storage. They must never carry the
+    // config, path, key, order, or fold state.
     expect(source.includes('host.storage')).toBe(true);
     expect(source.includes('INIT_MARKER_KEY')).toBe(true);
     expect(source.includes("scope: 'instance'")).toBe(true);

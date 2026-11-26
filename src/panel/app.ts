@@ -168,9 +168,14 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
 
   type Kpi = { label: HTMLElement; value: HTMLElement; sub: HTMLElement };
 
-  const makeKpi = (key: string): Kpi => {
+  const makeKpi = (key: string, pick = false): Kpi => {
     const cell = el('div', 'kpi');
-    const label = el('span', 'kpi-label', t(key));
+    const label = pick ? el('button', 'kpi-label kpi-pick') : el('span', 'kpi-label');
+    if (pick) {
+      (label as HTMLButtonElement).type = 'button';
+      (label as HTMLButtonElement).setAttribute('aria-pressed', 'false');
+    }
+    setText(label, t(key));
     const value = el('span', 'kpi-value', '—');
     const sub = el('span', 'kpi-sub', '');
     cell.append(label, value, sub);
@@ -178,7 +183,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     return { label, value, sub };
   };
 
-  const kpiTokens = makeKpi('kpi.tokens');
+  const kpiTokens = makeKpi('kpi.tokens', true);
   const kpiCache = makeKpi('kpi.cacheHit');
   const kpiCalls = makeKpi('kpi.calls');
   const kpiCost = makeKpi('kpi.cost');
@@ -397,9 +402,66 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   let initMessage: InitMessage | null = null;
   let creatingConfig = false;
 
-  /** Version-prefixed, instance-scoped marker; the only host storage this panel uses. */
+  /** Version-prefixed, instance-scoped marker; one of the two host-storage keys. */
   const INIT_MARKER_KEY = 'openchamber-magpie-usage:v1:config-initialized';
   const STORAGE_OPTIONS = { scope: 'instance' as const };
+
+  /**
+   * Magpie desktop's `tokens` / `tokens with cache` pick, as a one-click label
+   * toggle. Cache read and written are outside the gateway's `input`, so both
+   * are added on top of input and output when the pick is on.
+   */
+  const TOKENS_WITH_CACHE_KEY = 'openchamber-magpie-usage:v1:tokens-with-cache';
+  let tokensWithCache = true;
+
+  const renderTokenLabel = (): void => {
+    setText(
+      kpiTokens.label,
+      `${t('kpi.tokens')} · ${t(tokensWithCache ? 'kpi.tokensWithCache' : 'kpi.tokensWithoutCache')}`,
+    );
+    kpiTokens.label.setAttribute('aria-pressed', tokensWithCache ? 'true' : 'false');
+  };
+
+  const saveTokensWithCache = async (): Promise<void> => {
+    try {
+      if (!host.storage) return;
+      await host.storage.set(
+        TOKENS_WITH_CACHE_KEY,
+        { version: 1, withCache: tokensWithCache },
+        STORAGE_OPTIONS,
+      );
+    } catch {
+      // A preference that cannot be saved must not break the panel.
+    }
+  };
+
+  /**
+   * Reads the pick once. A missing or unreadable value keeps the panel's
+   * default (cache counted); no config, path, key, or order is ever stored.
+   */
+  const loadTokensWithCache = async (): Promise<void> => {
+    try {
+      if (host.storage) {
+        const saved = await host.storage.get(TOKENS_WITH_CACHE_KEY, STORAGE_OPTIONS);
+        if (disposed) return;
+        if (typeof saved === 'object' && saved !== null) {
+          const withCache = (saved as { withCache?: unknown }).withCache;
+          if (typeof withCache === 'boolean') tokensWithCache = withCache;
+        }
+      }
+    } catch {
+      // The default stands.
+    }
+    renderTokenLabel();
+    if (state.usage) renderUsage();
+  };
+
+  kpiTokens.label.addEventListener('click', () => {
+    tokensWithCache = !tokensWithCache;
+    renderTokenLabel();
+    if (state.usage) renderUsage();
+    void saveTokensWithCache();
+  });
 
   /**
    * The host has no font-size token for guests (SDK 2.5.1); `fontScale` in the
@@ -464,7 +526,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     for (const [period, button] of periodButtons) setText(button, t(`period.${period}`));
 
     setText(usageLabel, t('usage.title'));
-    setText(kpiTokens.label, t('kpi.tokens'));
+    renderTokenLabel();
     setText(kpiCache.label, t('kpi.cacheHit'));
     setText(kpiCalls.label, t('kpi.calls'));
     setText(kpiCost.label, t('kpi.cost'));
@@ -1107,10 +1169,17 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
     setMessage(banner, null);
     const totals = usage.totals;
 
-    setText(kpiTokens.value, formatCompact(totals.input + totals.output));
+    // Cache read and written live outside `input`; the pick adds both, as
+    // Magpie desktop's `tokens with cache` does.
+    const cachedTokens = totals.cacheRead + totals.cacheWrite;
+    const inTokens = totals.input + (tokensWithCache ? cachedTokens : 0);
+    setText(kpiTokens.value, formatCompact(inTokens + totals.output));
     setText(
       kpiTokens.sub,
-      t('usage.tokensSub', { input: formatCompact(totals.input), output: formatCompact(totals.output) }),
+      t(tokensWithCache ? 'usage.tokensSubWithCache' : 'usage.tokensSub', {
+        input: formatCompact(inTokens),
+        output: formatCompact(totals.output),
+      }),
     );
 
     const hit = cacheHitRate(totals.input, totals.cacheRead, totals.cacheWrite);
@@ -1763,6 +1832,7 @@ export const mountPanel = ({ host, root }: PanelOptions): PanelHandle => {
   };
 
   applyStaticLabels();
+  void loadTokensWithCache();
 
   let started = false;
 
