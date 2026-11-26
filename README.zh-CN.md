@@ -44,7 +44,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 
 `today` / `7d` / `30d` 切换上游统计周期。
 
-- **TOKEN**：输入 + 输出。缓存读取单独显示。
+- **TOKEN**：输入 + 输出，或再加上缓存读取与写入。标签本身是一键切换，选择经宿主实例存储记住；默认含缓存。缓存流量在 **缓存命中** 里仍单独显示。
 - **缓存命中**：`cache_read / (input + cache_read + cache_write)`。分母为 0 时显示 `—`，不会显示 `0%` 或 `NaN`。
 - **调用**：包含失败、重试与循环调用。
 - **成本（估算）** 与未计价调用数。
@@ -58,7 +58,7 @@ OpenChamber 右侧栏扩展，用于查看 [Magpie](https://usemagpie.ai) 的用
 </tr>
 <tr>
 <td><sub><b>OpenChamber</b>，今天。</sub></td>
-<td><sub><b>magpie 桌面端</b>，今天。它的 Token 口径包含缓存读取，所以数值更大；面板把缓存读取放在单独的 KPI 里。</sub></td>
+<td><sub><b>magpie 桌面端</b>，今天。它的 Token 口径包含缓存读取；面板的切换也把缓存读取与写入计入。这张面板截图早于该切换，只显示输入 + 输出。</sub></td>
 </tr>
 </table>
 
@@ -341,7 +341,7 @@ upstream-redirect (跨源重定向被拒)
 
 ## 边界与安全
 
-- 面板运行在沙箱 iframe，只加载 classic IIFE 的 `panel/main.js`。它不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直接拨号到本地服务。它唯一存储的是通过宿主存储 API 写入的实例作用域首开标记 `openchamber-magpie-usage:v1:config-initialized`——绝不存配置内容、路径、密钥、顺序或折叠状态。顺序保存与创建配置同样走 `host.serviceRequest`；面板不发 `fetch` 或 XHR 请求。它唯一的外部加载，是浏览器从已批准的 jsDelivr 源请求的界面字体 WOFF2。
+- 面板运行在沙箱 iframe，只加载 classic IIFE 的 `panel/main.js`。它不能 `fetch`、不能用 XHR、不能碰 `localStorage`、`sessionStorage`、IndexedDB 或 cookie，也不能直接拨号到本地服务。它只通过宿主存储 API 存两个实例作用域的值：首开标记 `openchamber-magpie-usage:v1:config-initialized` 与 Token 口径 `openchamber-magpie-usage:v1:tokens-with-cache`——绝不存配置内容、路径、密钥、顺序或折叠状态。顺序保存与创建配置同样走 `host.serviceRequest`；面板不发 `fetch` 或 XHR 请求。它唯一的外部加载，是浏览器从已批准的 jsDelivr 源请求的界面字体 WOFF2。
 - 面板颜色只用宿主注入的 `--oc-*` 变量；样式表内没有硬编码的浅色或深色值。
 - 宿主控件（徽标、刷新按钮）在模块加载时挂载一次；`onReady` 再次触发时只更新值。
 - 本地服务以当前用户权限运行，只绑 `127.0.0.1`，每个请求校验 Bearer。token 不记录。

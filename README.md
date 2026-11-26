@@ -44,7 +44,7 @@ All numbers come from the local service. The footer states the scope: this is us
 
 The `today` / `7d` / `30d` switch changes the upstream period.
 
-- **TOKEN**: input + output. Cache reads are reported separately.
+- **TOKEN**: input + output, or with cache read and written counted on top. The label is a one-click pick between the two, kept through the host's instance storage; the default counts cache. Cache traffic is still reported on its own by **Cache hit**.
 - **Cache hit**: `cache_read / (input + cache_read + cache_write)`. The row shows `—` when the denominator is 0; it never shows `0%` or `NaN`.
 - **Calls**: includes failures, retries, and looped calls.
 - **Cost (est.)** and the number of unpriced calls.
@@ -58,7 +58,7 @@ The `today` / `7d` / `30d` switch changes the upstream period.
 </tr>
 <tr>
 <td><sub><b>OpenChamber</b>, Today.</sub></td>
-<td><sub><b>magpie desktop</b>, Today. Its Token KPI includes cache reads, so it is larger; the panel keeps cache reads in a separate KPI.</sub></td>
+<td><sub><b>magpie desktop</b>, Today. Its Token KPI includes cache reads, and the panel's pick counts cache read and written. This panel screenshot predates the pick and shows input + output only.</sub></td>
 </tr>
 </table>
 
@@ -341,7 +341,7 @@ The upstream error body is not returned to the panel. Only the category, status,
 
 ## Boundaries and security
 
-- The panel runs in a sandboxed iframe and loads a classic IIFE `panel/main.js`. It cannot `fetch`, use XHR, touch `localStorage`, `sessionStorage`, IndexedDB, or cookies, or dial the local service directly. The only thing it stores is the instance-scoped first-open marker `openchamber-magpie-usage:v1:config-initialized` through the host's own storage API — never the config, the path, the key, the order, or a fold state. Order saves and config creation also go through `host.serviceRequest`; the panel makes no fetch or XHR request. Its only external load is the interface-font WOFF2 that the browser requests from the approved jsDelivr origin.
+- The panel runs in a sandboxed iframe and loads a classic IIFE `panel/main.js`. It cannot `fetch`, use XHR, touch `localStorage`, `sessionStorage`, IndexedDB, or cookies, or dial the local service directly. It stores only two instance-scoped values through the host's own storage API: the first-open marker `openchamber-magpie-usage:v1:config-initialized` and the token pick `openchamber-magpie-usage:v1:tokens-with-cache` — never the config, the path, the key, the order, or a fold state. Order saves and config creation also go through `host.serviceRequest`; the panel makes no fetch or XHR request. Its only external load is the interface-font WOFF2 that the browser requests from the approved jsDelivr origin.
 - Panel colours come only from the host's `--oc-*` variables. The stylesheet contains no hard-coded light or dark values.
 - Host controls (badge, refresh button) are mounted once at module load. A repeated `onReady` snapshot only updates values.
 - The local service runs with the current user's privileges, binds only to `127.0.0.1`, and checks the Bearer token on every request. The token is never logged.
